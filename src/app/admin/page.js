@@ -20,8 +20,9 @@ export default function AdminPage() {
   const [pinError, setPinError] = useState("");
   const [quizzes, setQuizzes] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [quizToDelete, setQuizToDelete] = useState(null);
 
-  const ADMIN_PIN = "1234";
+  const ADMIN_PIN = "30121998";
 
   useEffect(() => {
     const stored = sessionStorage.getItem("admin_auth");
@@ -65,14 +66,20 @@ export default function AdminPage() {
     }
   };
 
-  const handleDeleteQuiz = async (quizId) => {
-    if (!confirm("Yakin ingin menghapus quiz ini?")) return;
+  const handleDeleteClick = (quizId) => {
+    setQuizToDelete(quizId);
+  };
+
+  const confirmDelete = async () => {
+    if (!quizToDelete) return;
     try {
-      await deleteDoc(doc(db, "quizzes", quizId));
-      setQuizzes((prev) => prev.filter((q) => q.id !== quizId));
+      await deleteDoc(doc(db, "quizzes", quizToDelete));
+      setQuizzes((prev) => prev.filter((q) => q.id !== quizToDelete));
     } catch (err) {
       console.error("Error deleting quiz:", err);
+      alert("Gagal menghapus quiz. Silakan periksa koneksi.");
     }
+    setQuizToDelete(null);
   };
 
   const getStatusBadge = (status) => {
@@ -214,7 +221,7 @@ export default function AdminPage() {
                     className="btn btn-danger btn-sm"
                     onClick={(e) => {
                       e.stopPropagation();
-                      handleDeleteQuiz(quiz.id);
+                      handleDeleteClick(quiz.id);
                     }}
                   >
                     Hapus
@@ -225,6 +232,23 @@ export default function AdminPage() {
           </div>
         )}
       </div>
+
+      {quizToDelete && (
+        <div style={{
+          position: "fixed", top: 0, left: 0, right: 0, bottom: 0,
+          background: "rgba(0,0,0,0.5)", zIndex: 100, display: "flex",
+          alignItems: "center", justifyContent: "center", padding: "1rem"
+        }}>
+          <div className="join-card animate-scale-in" style={{ maxWidth: "400px", padding: "2rem" }}>
+            <h2 style={{ color: "var(--answer-red)", marginBottom: "1rem", textAlign: "left" }}>Konfirmasi Hapus</h2>
+            <p style={{ color: "var(--text-medium)" }}>Yakin ingin menghapus quiz ini secara permanen? Semua data peserta juga akan hilang.</p>
+            <div style={{ display: "flex", gap: "1rem", marginTop: "2rem", justifyContent: "flex-end" }}>
+              <button className="btn btn-light" onClick={() => setQuizToDelete(null)}>Batal</button>
+              <button className="btn btn-danger" onClick={confirmDelete}>Ya, Hapus</button>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 }

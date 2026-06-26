@@ -34,6 +34,7 @@ export default function QuizPlayPage({ params }) {
   const [gameState, setGameState] = useState("loading");
   const [scorePopup, setScorePopup] = useState(null);
   const [isMuted, setIsMuted] = useState(false);
+  const [isBlurred, setIsBlurred] = useState(false);
   const audioRef = useRef(null);
   const hasJoined = useRef(false);
 
@@ -132,6 +133,46 @@ export default function QuizPlayPage({ params }) {
 
     return () => clearInterval(timer);
   }, [timeLeft, gameState, showResult]);
+
+  // Anti-cheat mechanisms (prevent copy, paste, context menu, handle blur)
+  useEffect(() => {
+    if (gameState !== "playing") return;
+
+    const handleContextMenu = (e) => e.preventDefault();
+    const handleCopy = (e) => {
+      e.preventDefault();
+      alert("Aksi salin/tempel tidak diizinkan selama quiz berlangsung.");
+    };
+    const handleKeyDown = (e) => {
+      if (e.key === "PrintScreen") {
+        navigator.clipboard.writeText("").catch(() => {});
+        alert("Aksi screenshot diblokir demi integritas quiz.");
+      }
+    };
+    const handleVisibilityChange = () => setIsBlurred(document.hidden);
+    const handleBlur = () => setIsBlurred(true);
+    const handleFocus = () => setIsBlurred(false);
+
+    document.addEventListener("contextmenu", handleContextMenu);
+    document.addEventListener("copy", handleCopy);
+    document.addEventListener("cut", handleCopy);
+    document.addEventListener("paste", handleCopy);
+    document.addEventListener("keydown", handleKeyDown);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    window.addEventListener("blur", handleBlur);
+    window.addEventListener("focus", handleFocus);
+
+    return () => {
+      document.removeEventListener("contextmenu", handleContextMenu);
+      document.removeEventListener("copy", handleCopy);
+      document.removeEventListener("cut", handleCopy);
+      document.removeEventListener("paste", handleCopy);
+      document.removeEventListener("keydown", handleKeyDown);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+      window.removeEventListener("blur", handleBlur);
+      window.removeEventListener("focus", handleFocus);
+    };
+  }, [gameState]);
 
   const handleTimeUp = useCallback(() => {
     if (selectedAnswer !== null) return;
@@ -325,11 +366,25 @@ export default function QuizPlayPage({ params }) {
   const question = quiz.questions[currentQuestion];
 
   return (
-    <div className="quiz-play-container">
+    <div className="quiz-play-container" style={{ userSelect: "none", WebkitUserSelect: "none" }}>
+      {isBlurred && (
+        <div style={{
+          position: "fixed", top: 0, left: 0, right: 0, bottom: 0,
+          background: "var(--bg-primary)", zIndex: 9999, display: "flex",
+          alignItems: "center", justifyContent: "center", flexDirection: "column"
+        }}>
+          <h2 style={{ color: "white", marginBottom: "1rem" }}>Layar Disembunyikan</h2>
+          <p style={{ color: "var(--text-white)", opacity: 0.8, textAlign: "center", maxWidth: "400px" }}>
+            Anda berpindah dari jendela quiz atau mencoba mengambil screenshot. <br/>
+            Klik di sini untuk melanjutkan quiz.
+          </p>
+        </div>
+      )}
+
       {quiz?.musicFileName && gameState === "playing" && (
         <audio
           ref={audioRef}
-          src={`/api/music/${quiz.musicFileName}`}
+          src={`/music/${quiz.musicFileName}`}
           autoPlay
           loop
           muted={isMuted}

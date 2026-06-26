@@ -165,7 +165,7 @@ export default function QuizManagePage({ params }) {
       {quiz.musicFileName && quiz.status === "active" && (
         <audio
           ref={audioRef}
-          src={`/api/music/${quiz.musicFileName}`}
+          src={`/music/${quiz.musicFileName}`}
           autoPlay
           loop
           muted={isMuted}
@@ -213,12 +213,20 @@ export default function QuizManagePage({ params }) {
             </div>
             <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
               {quiz.status === "draft" && (
-                <button
-                  className="btn btn-success btn-sm"
-                  onClick={() => handleStatusChange("active")}
-                >
-                  Mulai Quiz
-                </button>
+                <>
+                  <button
+                    className="btn btn-success btn-sm"
+                    onClick={() => handleStatusChange("active")}
+                  >
+                    Mulai Quiz
+                  </button>
+                  <button
+                    className="btn btn-purple btn-sm"
+                    onClick={() => router.push(`/admin/edit/${id}`)}
+                  >
+                    Edit Quiz
+                  </button>
+                </>
               )}
               {quiz.status === "active" && (
                 <button

@@ -4,7 +4,7 @@ import path from 'path';
 
 export async function GET() {
   try {
-    const musicDir = path.join(process.cwd(), 'src', 'app', 'admin', 'storage', 'music');
+    const musicDir = path.join(process.cwd(), 'public', 'music');
     
     if (!fs.existsSync(musicDir)) {
       fs.mkdirSync(musicDir, { recursive: true });
