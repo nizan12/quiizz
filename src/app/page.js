@@ -74,7 +74,7 @@ export default function HomePage() {
       <section className="hero">
         <div className="hero-content animate-fade-in-up">
           <h1 className="hero-title">
-            Quiz Interaktif Real-Time
+            Quiz Iya Qiuz
           </h1>
           <p className="hero-subtitle">
             Bergabung dengan quiz menggunakan kode undangan, jawab pertanyaan
