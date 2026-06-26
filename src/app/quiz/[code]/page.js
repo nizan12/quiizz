@@ -8,6 +8,7 @@ import {
   doc,
   addDoc,
   getDocs,
+  getDoc,
   updateDoc,
   query,
   where,
@@ -62,10 +63,28 @@ export default function QuizPlayPage({ params }) {
         setQuiz(quizData);
 
         const sessionKey = `quiz_${quizDoc.id}_participant`;
-        const storedParticipantId = sessionStorage.getItem(sessionKey);
+        const storedParticipantId = localStorage.getItem(sessionKey);
 
         if (storedParticipantId) {
           setParticipantId(storedParticipantId);
+          
+          // Restore progress to prevent restarting or going back
+          const pDocRef = doc(db, "quizzes", quizDoc.id, "participants", storedParticipantId);
+          const pDoc = await getDoc(pDocRef);
+          
+          if (pDoc.exists()) {
+            const pData = pDoc.data();
+            const previousAnswers = pData.answers || [];
+            setAnswers(previousAnswers);
+            setScore(pData.score || 0);
+            
+            if (previousAnswers.length >= quizData.questions?.length) {
+              setGameState("finished");
+              return; // Stop further execution since they already finished
+            } else {
+              setCurrentQuestion(previousAnswers.length);
+            }
+          }
         } else {
           const participantRef = await addDoc(
             collection(db, "quizzes", quizDoc.id, "participants"),
@@ -77,7 +96,7 @@ export default function QuizPlayPage({ params }) {
             }
           );
           setParticipantId(participantRef.id);
-          sessionStorage.setItem(sessionKey, participantRef.id);
+          localStorage.setItem(sessionKey, participantRef.id);
         }
 
         if (quizData.status === "active") {
