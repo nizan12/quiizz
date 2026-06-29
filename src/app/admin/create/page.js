@@ -130,6 +130,88 @@ export default function CreateQuizPage() {
     }
   };
 
+  const handleXMLImport = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      try {
+        const text = event.target.result;
+        const parser = new DOMParser();
+        const xmlDoc = parser.parseFromString(text, "text/xml");
+        
+        // Cek error parsing XML
+        const parseError = xmlDoc.getElementsByTagName("parsererror");
+        if (parseError.length > 0) {
+           setError("Format XML tidak valid.");
+           return;
+        }
+
+        const qNodes = xmlDoc.getElementsByTagName("question");
+        if (qNodes.length === 0) {
+           setError("Tidak ada tag <question> ditemukan di file XML.");
+           return;
+        }
+
+        const newQuestions = [];
+        for (let i = 0; i < qNodes.length; i++) {
+          const qNode = qNodes[i];
+          const questionText = qNode.getElementsByTagName("text")[0]?.textContent || "";
+          
+          const optionsNode = qNode.getElementsByTagName("options")[0];
+          const optionNodes = optionsNode ? optionsNode.getElementsByTagName("option") : [];
+          const options = [];
+          for (let j = 0; j < 4; j++) {
+             options.push(optionNodes[j]?.textContent || "");
+          }
+          
+          let correctAnswer = 0;
+          const answerNode = qNode.getElementsByTagName("answer")[0];
+          if (answerNode) {
+             const ansText = answerNode.textContent.trim().toUpperCase();
+             if (['A','B','C','D'].includes(ansText)) {
+                correctAnswer = ['A','B','C','D'].indexOf(ansText);
+             } else if (['0','1','2','3'].includes(ansText)) {
+                correctAnswer = parseInt(ansText);
+             } else {
+                const idx = options.findIndex(o => o.trim().toUpperCase() === ansText);
+                if (idx !== -1) correctAnswer = idx;
+             }
+          }
+          
+          let points = 10;
+          const pointsNode = qNode.getElementsByTagName("points")[0];
+          if (pointsNode) {
+             points = parseInt(pointsNode.textContent) || 10;
+          }
+
+          if (questionText) {
+             newQuestions.push({
+               id: newQuestions.length + 1,
+               question: questionText,
+               options,
+               correctAnswer,
+               points
+             });
+          }
+        }
+
+        if (newQuestions.length > 0) {
+          setQuestions(newQuestions);
+          setError("");
+        } else {
+          setError("Gagal membaca pertanyaan dari XML.");
+        }
+      } catch (err) {
+        console.error(err);
+        setError("Gagal mem-parsing XML.");
+      }
+    };
+    reader.readAsText(file);
+    e.target.value = null; // reset input
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError("");
@@ -267,13 +349,19 @@ export default function CreateQuizPage() {
           <div className="creator-section animate-fade-in-up delay-200">
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1.5rem" }}>
               <h2 style={{ marginBottom: 0 }}>Pertanyaan</h2>
-              <button
-                type="button"
-                className="btn btn-light btn-sm"
-                onClick={() => setShowAiken(!showAiken)}
-              >
-                {showAiken ? "Batal Import" : "Import Format Aiken"}
-              </button>
+              <div style={{ display: "flex", gap: "0.5rem" }}>
+                <button
+                  type="button"
+                  className="btn btn-light btn-sm"
+                  onClick={() => setShowAiken(!showAiken)}
+                >
+                  {showAiken ? "Batal Aiken" : "Import Aiken"}
+                </button>
+                <label className="btn btn-light btn-sm" style={{ cursor: "pointer", margin: 0, display: "flex", alignItems: "center" }}>
+                  Import XML
+                  <input type="file" accept=".xml" style={{ display: "none" }} onChange={handleXMLImport} />
+                </label>
+              </div>
             </div>
 
             {showAiken && (
