@@ -137,6 +137,33 @@ export default function QuizPlayPage({ params }) {
     return () => unsub();
   }, [quizId, gameState]);
 
+  // Synchronize audio playback
+  useEffect(() => {
+    if (gameState === "playing" && audioRef.current) {
+      const audio = audioRef.current;
+      
+      const syncAudio = () => {
+        if (quiz?.startedAt) {
+          const elapsed = (Date.now() - quiz.startedAt) / 1000;
+          const duration = audio.duration;
+          if (duration > 0) {
+            audio.currentTime = elapsed % duration;
+          } else {
+            audio.currentTime = elapsed;
+          }
+        }
+        audio.play().catch((err) => console.error("Audio play error:", err));
+      };
+
+      if (audio.readyState >= 1) { // HAVE_METADATA
+        syncAudio();
+      } else {
+        audio.addEventListener("loadedmetadata", syncAudio);
+        return () => audio.removeEventListener("loadedmetadata", syncAudio);
+      }
+    }
+  }, [gameState, quiz?.startedAt]);
+
   // Countdown timer
   useEffect(() => {
     if (gameState !== "playing" || showResult) return;
@@ -404,7 +431,6 @@ export default function QuizPlayPage({ params }) {
         <audio
           ref={audioRef}
           src={`/music/${quiz.musicFileName}`}
-          autoPlay
           loop
           muted={isMuted}
           style={{ display: "none" }}

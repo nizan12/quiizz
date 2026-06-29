@@ -101,6 +101,33 @@ export default function QuizManagePage({ params }) {
     return () => unsub();
   }, [id]);
 
+  // Synchronize audio playback
+  useEffect(() => {
+    if (quiz?.status === "active" && audioRef.current) {
+      const audio = audioRef.current;
+      
+      const syncAudio = () => {
+        if (quiz?.startedAt) {
+          const elapsed = (Date.now() - quiz.startedAt) / 1000;
+          const duration = audio.duration;
+          if (duration > 0) {
+            audio.currentTime = elapsed % duration;
+          } else {
+            audio.currentTime = elapsed;
+          }
+        }
+        audio.play().catch((err) => console.error("Audio play error:", err));
+      };
+
+      if (audio.readyState >= 1) { // HAVE_METADATA
+        syncAudio();
+      } else {
+        audio.addEventListener("loadedmetadata", syncAudio);
+        return () => audio.removeEventListener("loadedmetadata", syncAudio);
+      }
+    }
+  }, [quiz?.status, quiz?.startedAt]);
+
   const showToast = (message, type = "success") => {
     setToast({ message, type });
     setTimeout(() => setToast(null), 3000);
@@ -119,8 +146,12 @@ export default function QuizManagePage({ params }) {
 
   const handleStatusChange = async (newStatus) => {
     try {
-      await updateDoc(doc(db, "quizzes", id), { status: newStatus });
-      setQuiz((prev) => ({ ...prev, status: newStatus }));
+      const updateData = { status: newStatus };
+      if (newStatus === "active") {
+        updateData.startedAt = Date.now();
+      }
+      await updateDoc(doc(db, "quizzes", id), updateData);
+      setQuiz((prev) => ({ ...prev, status: newStatus, startedAt: updateData.startedAt || prev.startedAt }));
       const labels = { draft: "Draft", active: "Aktif", completed: "Selesai" };
       showToast(`Status diubah ke ${labels[newStatus]}`);
     } catch (err) {
@@ -166,7 +197,6 @@ export default function QuizManagePage({ params }) {
         <audio
           ref={audioRef}
           src={`/music/${quiz.musicFileName}`}
-          autoPlay
           loop
           muted={isMuted}
           style={{ display: "none" }}
