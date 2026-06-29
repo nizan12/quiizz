@@ -21,6 +21,7 @@ export default function QuizPlayPage({ params }) {
   const searchParams = useSearchParams();
   const router = useRouter();
   const playerName = searchParams.get("name") || "Anonim";
+  const playerNim = searchParams.get("nim") || "";
 
   const [quizId, setQuizId] = useState(null);
   const [quiz, setQuiz] = useState(null);
@@ -90,6 +91,7 @@ export default function QuizPlayPage({ params }) {
             collection(db, "quizzes", quizDoc.id, "participants"),
             {
               name: playerName,
+              nim: playerNim,
               score: 0,
               answers: [],
               joinedAt: serverTimestamp(),

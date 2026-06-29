@@ -9,13 +9,14 @@ export default function HomePage() {
   const router = useRouter();
   const [inviteCode, setInviteCode] = useState("");
   const [playerName, setPlayerName] = useState("");
+  const [playerNim, setPlayerNim] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
   const handleJoinQuiz = async (e) => {
     e.preventDefault();
-    if (!inviteCode.trim() || !playerName.trim()) {
-      setError("Mohon isi kode undangan dan nama Anda");
+    if (!inviteCode.trim() || !playerName.trim() || !playerNim.trim()) {
+      setError("Mohon isi kode undangan, nama, dan NIM Anda");
       return;
     }
 
@@ -47,7 +48,7 @@ export default function HomePage() {
       router.push(
         `/quiz/${inviteCode.trim().toUpperCase()}?name=${encodeURIComponent(
           playerName.trim()
-        )}`
+        )}&nim=${encodeURIComponent(playerNim.trim())}`
       );
     } catch (err) {
       console.error("Error joining quiz:", err);
@@ -110,6 +111,18 @@ export default function HomePage() {
                   value={playerName}
                   onChange={(e) => setPlayerName(e.target.value)}
                   maxLength={30}
+                />
+              </div>
+              <div className="input-group">
+                <label htmlFor="player-nim">NIM</label>
+                <input
+                  id="player-nim"
+                  type="text"
+                  className="input"
+                  placeholder="Masukkan NIM Anda"
+                  value={playerNim}
+                  onChange={(e) => setPlayerNim(e.target.value)}
+                  maxLength={20}
                 />
               </div>
               {error && (
