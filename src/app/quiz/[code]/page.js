@@ -37,6 +37,8 @@ export default function QuizPlayPage({ params }) {
   const [scorePopup, setScorePopup] = useState(null);
   const [isMuted, setIsMuted] = useState(false);
   const [isBlurred, setIsBlurred] = useState(false);
+  const [warningToast, setWarningToast] = useState(null);
+  const toastTimeoutRef = useRef(null);
   const audioRef = useRef(null);
   const hasJoined = useRef(false);
 
@@ -182,45 +184,152 @@ export default function QuizPlayPage({ params }) {
     return () => clearInterval(timer);
   }, [timeLeft, gameState, showResult]);
 
-  // Anti-cheat mechanisms (prevent copy, paste, context menu, handle blur)
+  // Helper to trigger stylish anti-cheat toast notification
+  const triggerWarning = useCallback((msg) => {
+    if (toastTimeoutRef.current) clearTimeout(toastTimeoutRef.current);
+    setWarningToast(msg);
+    toastTimeoutRef.current = setTimeout(() => {
+      setWarningToast(null);
+    }, 2800);
+  }, []);
+
+  // Helper to clear clipboard securely
+  const clearClipboard = useCallback(() => {
+    if (typeof navigator !== "undefined" && navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText("Aksi screenshot & salin diblokir.").catch(() => {});
+    }
+  }, []);
+
+  // Comprehensive Anti-cheat mechanisms (anti-screenshot, anti-copy, anti-print, devtools block)
   useEffect(() => {
     if (gameState !== "playing") return;
 
-    const handleContextMenu = (e) => e.preventDefault();
+    const handleContextMenu = (e) => {
+      e.preventDefault();
+      triggerWarning("Klik kanan dinonaktifkan demi integritas quiz.");
+      return false;
+    };
+
+    const handleSelectStart = (e) => {
+      e.preventDefault();
+      return false;
+    };
+
+    const handleDragStart = (e) => {
+      e.preventDefault();
+      return false;
+    };
+
     const handleCopy = (e) => {
       e.preventDefault();
-      alert("Aksi salin/tempel tidak diizinkan selama quiz berlangsung.");
+      clearClipboard();
+      triggerWarning("Aksi salin (copy) teks dilarang selama quiz berlangsung.");
+      return false;
     };
+
+    const handleCut = (e) => {
+      e.preventDefault();
+      clearClipboard();
+      triggerWarning("Aksi potong (cut) teks dilarang.");
+      return false;
+    };
+
+    const handlePaste = (e) => {
+      e.preventDefault();
+      return false;
+    };
+
     const handleKeyDown = (e) => {
-      if (e.key === "PrintScreen") {
-        navigator.clipboard.writeText("").catch(() => {});
-        alert("Aksi screenshot diblokir demi integritas quiz.");
+      const isCtrl = e.ctrlKey || e.metaKey;
+      const key = e.key ? e.key.toLowerCase() : "";
+
+      // PrintScreen Key detection
+      if (e.key === "PrintScreen" || e.code === "PrintScreen") {
+        e.preventDefault();
+        clearClipboard();
+        setIsBlurred(true);
+        triggerWarning("Aksi tangkapan layar (Screenshot) diblokir!");
+        return;
+      }
+
+      // Block Ctrl+C, Ctrl+X, Ctrl+A, Ctrl+U, Ctrl+S, Ctrl+P
+      if (isCtrl && ["c", "x", "a", "u", "s", "p"].includes(key)) {
+        e.preventDefault();
+        if (key === "c" || key === "x" || key === "a") {
+          clearClipboard();
+          triggerWarning("Shortcut salin / seleksi teks dinonaktifkan.");
+        } else if (key === "p") {
+          triggerWarning("Mencetak halaman (Print) diblokir.");
+        } else if (key === "s") {
+          triggerWarning("Menyimpan halaman diblokir.");
+        } else if (key === "u") {
+          triggerWarning("Melihat source code diblokir.");
+        }
+        return false;
+      }
+
+      // Block DevTools shortcuts (F12, Ctrl+Shift+I, Ctrl+Shift+J, Ctrl+Shift+C, Ctrl+Shift+S)
+      if (
+        e.key === "F12" ||
+        (isCtrl && e.shiftKey && ["i", "j", "c", "s"].includes(key))
+      ) {
+        e.preventDefault();
+        triggerWarning("Developer Tools / Snip shortcut diblokir.");
+        return false;
       }
     };
-    const handleVisibilityChange = () => setIsBlurred(document.hidden);
-    const handleBlur = () => setIsBlurred(true);
-    const handleFocus = () => setIsBlurred(false);
+
+    const handleKeyUp = (e) => {
+      if (e.key === "PrintScreen" || e.code === "PrintScreen") {
+        clearClipboard();
+        setIsBlurred(true);
+        triggerWarning("Aksi tangkapan layar (Screenshot) diblokir!");
+      }
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.hidden) {
+        clearClipboard();
+        setIsBlurred(true);
+      }
+    };
+
+    const handleBlur = () => {
+      clearClipboard();
+      setIsBlurred(true);
+    };
+
+    const handleFocus = () => {
+      // Focus regained
+      setIsBlurred(false);
+    };
 
     document.addEventListener("contextmenu", handleContextMenu);
+    document.addEventListener("selectstart", handleSelectStart);
+    document.addEventListener("dragstart", handleDragStart);
     document.addEventListener("copy", handleCopy);
-    document.addEventListener("cut", handleCopy);
-    document.addEventListener("paste", handleCopy);
+    document.addEventListener("cut", handleCut);
+    document.addEventListener("paste", handlePaste);
     document.addEventListener("keydown", handleKeyDown);
+    document.addEventListener("keyup", handleKeyUp);
     document.addEventListener("visibilitychange", handleVisibilityChange);
     window.addEventListener("blur", handleBlur);
     window.addEventListener("focus", handleFocus);
 
     return () => {
       document.removeEventListener("contextmenu", handleContextMenu);
+      document.removeEventListener("selectstart", handleSelectStart);
+      document.removeEventListener("dragstart", handleDragStart);
       document.removeEventListener("copy", handleCopy);
-      document.removeEventListener("cut", handleCopy);
-      document.removeEventListener("paste", handleCopy);
+      document.removeEventListener("cut", handleCut);
+      document.removeEventListener("paste", handlePaste);
       document.removeEventListener("keydown", handleKeyDown);
+      document.removeEventListener("keyup", handleKeyUp);
       document.removeEventListener("visibilitychange", handleVisibilityChange);
       window.removeEventListener("blur", handleBlur);
       window.removeEventListener("focus", handleFocus);
     };
-  }, [gameState]);
+  }, [gameState, triggerWarning, clearClipboard]);
 
   const handleTimeUp = useCallback(() => {
     if (selectedAnswer !== null) return;
@@ -414,18 +523,49 @@ export default function QuizPlayPage({ params }) {
   const question = quiz.questions[currentQuestion];
 
   return (
-    <div className="quiz-play-container" style={{ userSelect: "none", WebkitUserSelect: "none" }}>
+    <div className="quiz-play-container protected-content">
+      {/* Anti-cheat Shield Overlay */}
       {isBlurred && (
-        <div style={{
-          position: "fixed", top: 0, left: 0, right: 0, bottom: 0,
-          background: "var(--bg-primary)", zIndex: 9999, display: "flex",
-          alignItems: "center", justifyContent: "center", flexDirection: "column"
-        }}>
-          <h2 style={{ color: "white", marginBottom: "1rem" }}>Layar Disembunyikan</h2>
-          <p style={{ color: "var(--text-white)", opacity: 0.8, textAlign: "center", maxWidth: "400px" }}>
-            Anda berpindah dari jendela quiz atau mencoba mengambil screenshot. <br/>
-            Klik di sini untuk melanjutkan quiz.
-          </p>
+        <div
+          className="anti-cheat-overlay"
+          onClick={() => setIsBlurred(false)}
+        >
+          <div className="anti-cheat-card" onClick={(e) => e.stopPropagation()}>
+            <div className="anti-cheat-icon-circle">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" width="40" height="40">
+                <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+                <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+              </svg>
+            </div>
+            <div>
+              <h2 style={{ color: "#FFFFFF", fontSize: "1.4rem", marginBottom: "0.5rem" }}>
+                Layar Diamankan
+              </h2>
+              <p style={{ color: "rgba(255, 255, 255, 0.8)", fontSize: "0.95rem", lineHeight: 1.5 }}>
+                Tangkapan layar (screenshot) dan perpindahan aplikasi dicegah demi kejujuran quiz.
+              </p>
+            </div>
+            <button
+              className="btn btn-primary btn-lg"
+              onClick={() => {
+                setIsBlurred(false);
+                window.focus();
+              }}
+              style={{ width: "100%", marginTop: "0.5rem" }}
+            >
+              Kembali ke Quiz
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Floating Warning Toast */}
+      {warningToast && (
+        <div className="anti-cheat-toast">
+          <svg viewBox="0 0 24 24" fill="currentColor" width="22" height="22">
+            <path d="M12 2L1 21h22L12 2zm0 3.99L19.53 19H4.47L12 5.99zM11 10h2v4h-2zm0 6h2v2h-2z" />
+          </svg>
+          <span>{warningToast}</span>
         </div>
       )}
 
@@ -458,7 +598,7 @@ export default function QuizPlayPage({ params }) {
         </div>
       )}
 
-      <div className="question-container">
+      <div className={`question-container ${isBlurred ? "content-shielded" : ""}`}>
         {/* Progress */}
         <div className="question-progress">
           <span className="progress-text">

@@ -114,6 +114,17 @@ function ResultsContent() {
     loadResults();
   }, [quizId, participantId]);
 
+  useEffect(() => {
+    const handleContextMenu = (e) => e.preventDefault();
+    const handleCopy = (e) => e.preventDefault();
+    document.addEventListener("contextmenu", handleContextMenu);
+    document.addEventListener("copy", handleCopy);
+    return () => {
+      document.removeEventListener("contextmenu", handleContextMenu);
+      document.removeEventListener("copy", handleCopy);
+    };
+  }, []);
+
   if (loading) {
     return (
       <div className="loading-container" style={{ minHeight: "100vh" }}>
@@ -148,7 +159,7 @@ function ResultsContent() {
   };
 
   return (
-    <div className="results-container">
+    <div className="results-container protected-content">
       {showConfetti && <Confetti />}
 
       <div className="results-header">
