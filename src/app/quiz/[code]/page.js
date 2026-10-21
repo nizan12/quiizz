@@ -15,6 +15,7 @@ import {
   onSnapshot,
   serverTimestamp,
 } from "@/lib/firebase";
+import { sfx } from "@/lib/sounds";
 
 export default function QuizPlayPage({ params }) {
   const { code } = use(params);
@@ -22,6 +23,7 @@ export default function QuizPlayPage({ params }) {
   const router = useRouter();
   const playerName = searchParams.get("name") || "Anonim";
   const playerNim = searchParams.get("nim") || "";
+  const playerAvatar = searchParams.get("avatar") || "🦁";
 
   const [quizId, setQuizId] = useState(null);
   const [quiz, setQuiz] = useState(null);
@@ -31,6 +33,7 @@ export default function QuizPlayPage({ params }) {
   const [showResult, setShowResult] = useState(false);
   const [isCorrect, setIsCorrect] = useState(false);
   const [score, setScore] = useState(0);
+  const [streak, setStreak] = useState(0);
   const [timeLeft, setTimeLeft] = useState(0);
   const [answers, setAnswers] = useState([]);
   const [gameState, setGameState] = useState("loading");
@@ -38,6 +41,8 @@ export default function QuizPlayPage({ params }) {
   const [isMuted, setIsMuted] = useState(false);
   const [isBlurred, setIsBlurred] = useState(false);
   const [warningToast, setWarningToast] = useState(null);
+  const [participantsList, setParticipantsList] = useState([]);
+  const [floatingReactions, setFloatingReactions] = useState([]);
   const toastTimeoutRef = useRef(null);
   const audioRef = useRef(null);
   const hasJoined = useRef(false);
@@ -94,7 +99,9 @@ export default function QuizPlayPage({ params }) {
             {
               name: playerName,
               nim: playerNim,
+              avatar: playerAvatar,
               score: 0,
+              streak: 0,
               answers: [],
               joinedAt: serverTimestamp(),
             }
@@ -141,6 +148,32 @@ export default function QuizPlayPage({ params }) {
     return () => unsub();
   }, [quizId, gameState]);
 
+  // Real-time participants listener for waiting lobby
+  useEffect(() => {
+    if (!quizId) return;
+    const unsub = onSnapshot(
+      collection(db, "quizzes", quizId, "participants"),
+      (snapshot) => {
+        const list = snapshot.docs.map((docSnap) => ({
+          id: docSnap.id,
+          ...docSnap.data(),
+        }));
+        setParticipantsList(list);
+      }
+    );
+    return () => unsub();
+  }, [quizId]);
+
+  // Floating reaction helper
+  const sendReaction = (emoji) => {
+    const id = Date.now() + Math.random();
+    const left = Math.random() * 60 + 20;
+    setFloatingReactions((prev) => [...prev, { id, emoji, left }]);
+    setTimeout(() => {
+      setFloatingReactions((prev) => prev.filter((r) => r.id !== id));
+    }, 2000);
+  };
+
   // Synchronize audio playback
   useEffect(() => {
     if (gameState === "playing" && audioRef.current) {
@@ -168,7 +201,7 @@ export default function QuizPlayPage({ params }) {
     }
   }, [gameState, quiz?.startedAt]);
 
-  // Countdown timer
+  // Countdown timer with SFX
   useEffect(() => {
     if (gameState !== "playing" || showResult) return;
 
@@ -177,12 +210,16 @@ export default function QuizPlayPage({ params }) {
       return;
     }
 
+    if (timeLeft <= 5 && !isMuted) {
+      sfx.playTick();
+    }
+
     const timer = setInterval(() => {
       setTimeLeft((prev) => prev - 1);
     }, 1000);
 
     return () => clearInterval(timer);
-  }, [timeLeft, gameState, showResult]);
+  }, [timeLeft, gameState, showResult, isMuted]);
 
   // Helper to trigger stylish anti-cheat toast notification
   const triggerWarning = useCallback((msg) => {
@@ -336,7 +373,11 @@ export default function QuizPlayPage({ params }) {
     setSelectedAnswer(-1);
     setIsCorrect(false);
     setShowResult(true);
-    setScorePopup({ correct: false, points: 0 });
+    setStreak(0);
+    if (!isMuted) {
+      sfx.playWrong();
+    }
+    setScorePopup({ correct: false, points: 0, streak: 0 });
 
     const newAnswer = {
       questionId: currentQuestion,
@@ -350,7 +391,7 @@ export default function QuizPlayPage({ params }) {
       setScorePopup(null);
       goToNextQuestion();
     }, 2000);
-  }, [selectedAnswer, currentQuestion, quiz]);
+  }, [selectedAnswer, currentQuestion, quiz, isMuted]);
 
   const handleAnswer = (optionIndex) => {
     if (selectedAnswer !== null || showResult) return;
@@ -362,12 +403,40 @@ export default function QuizPlayPage({ params }) {
     const speedBonus = correct
       ? Math.round((timeLeft / (quiz.timePerQuestion || 30)) * 5)
       : 0;
-    const totalPoints = points + speedBonus;
+
+    let newStreak = streak;
+    let streakBonus = 0;
+
+    if (correct) {
+      newStreak = streak + 1;
+      streakBonus = newStreak >= 2 ? Math.min((newStreak - 1) * 2, 8) : 0;
+      setStreak(newStreak);
+      if (!isMuted) {
+        if (newStreak >= 3) {
+          sfx.playStreak();
+        } else {
+          sfx.playCorrect();
+        }
+      }
+    } else {
+      newStreak = 0;
+      setStreak(0);
+      if (!isMuted) {
+        sfx.playWrong();
+      }
+    }
+
+    const totalPoints = points + speedBonus + streakBonus;
 
     setSelectedAnswer(optionIndex);
     setIsCorrect(correct);
     setShowResult(true);
-    setScorePopup({ correct, points: totalPoints });
+    setScorePopup({
+      correct,
+      points: totalPoints,
+      streak: newStreak,
+      streakBonus,
+    });
 
     const newScore = score + totalPoints;
     setScore(newScore);
@@ -377,12 +446,14 @@ export default function QuizPlayPage({ params }) {
       selected: optionIndex,
       correct,
       timeTaken,
+      streak: newStreak,
     };
     setAnswers((prev) => [...prev, newAnswer]);
 
     if (participantId && quizId) {
       updateDoc(doc(db, "quizzes", quizId, "participants", participantId), {
         score: newScore,
+        streak: newStreak,
         answers: [...answers, newAnswer],
       }).catch(console.error);
     }
@@ -466,20 +537,97 @@ export default function QuizPlayPage({ params }) {
     );
   }
 
-  // Waiting room
+  // Waiting room (Interactive Lobby)
   if (gameState === "waiting") {
     return (
-      <div className="quiz-play-container">
-        <div className="waiting-room animate-scale-in">
-          <h1>Menunggu Quiz Dimulai</h1>
-          <p>
-            Halo <strong>{playerName}</strong>! Quiz &quot;{quiz?.title}&quot; akan segera
-            dimulai.
+      <div className="quiz-play-container protected-content">
+        {/* Floating Reactions */}
+        {floatingReactions.map((r) => (
+          <div
+            key={r.id}
+            className="floating-reaction-item"
+            style={{ left: `${r.left}%` }}
+          >
+            {r.emoji}
+          </div>
+        ))}
+
+        <div className="lobby-card animate-scale-in">
+          <div className="lobby-count-badge">
+            👥 {participantsList.length} Peserta Sudah Masuk
+          </div>
+
+          <h1 style={{ fontSize: "1.75rem", marginBottom: "0.25rem" }}>
+            {quiz?.title || "Quiz"}
+          </h1>
+          <p style={{ opacity: 0.8, fontSize: "0.95rem" }}>
+            Menunggu Host / Admin memulai kuis...
           </p>
-          <p style={{ fontSize: "0.85rem", opacity: 0.6, marginTop: "0.5rem" }}>
-            Admin akan memulai quiz. Harap tunggu...
+
+          {/* Current player spotlight */}
+          <div
+            style={{
+              margin: "1.25rem auto 0.5rem",
+              display: "inline-flex",
+              alignItems: "center",
+              gap: "10px",
+              background: "rgba(255,255,255,0.15)",
+              padding: "8px 20px",
+              borderRadius: "var(--radius-full)",
+            }}
+          >
+            <span style={{ fontSize: "1.6rem" }}>{playerAvatar}</span>
+            <span style={{ fontWeight: 800, fontSize: "1.05rem" }}>
+              {playerName}
+            </span>
+            {playerNim && (
+              <span style={{ opacity: 0.7, fontSize: "0.85rem" }}>
+                ({playerNim})
+              </span>
+            )}
+          </div>
+
+          {/* Participants chips grid */}
+          <div className="lobby-players-grid">
+            {participantsList.map((p) => {
+              const isMe = p.id === participantId || p.name === playerName;
+              return (
+                <div
+                  key={p.id}
+                  className={`player-chip ${isMe ? "is-me" : ""}`}
+                >
+                  <span className="chip-avatar">{p.avatar || "👤"}</span>
+                  <span>{p.name}</span>
+                  {isMe && <span className="you-tag">Kamu</span>}
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Reaction buttons */}
+          <p
+            style={{
+              fontSize: "0.8rem",
+              opacity: 0.7,
+              marginBottom: "0.5rem",
+            }}
+          >
+            Kirim reaksi emoji ke layar:
           </p>
-          <div className="waiting-dots">
+          <div className="reaction-bar-container">
+            {["👏", "🔥", "❤️", "🎉", "😎", "🚀"].map((em) => (
+              <button
+                key={em}
+                className="reaction-btn"
+                type="button"
+                onClick={() => sendReaction(em)}
+              >
+                {em}
+              </button>
+            ))}
+          </div>
+
+          <div className="waiting-dots" style={{ marginTop: "1.5rem" }}>
             <span></span>
             <span></span>
             <span></span>
@@ -594,6 +742,11 @@ export default function QuizPlayPage({ params }) {
           </div>
           {scorePopup.correct && (
             <div className="score-points">+{scorePopup.points} poin</div>
+          )}
+          {scorePopup.streak >= 2 && (
+            <div className="streak-badge-popup">
+              🔥 {scorePopup.streak}x STREAK! (+{scorePopup.streakBonus} Bonus Pts)
+            </div>
           )}
         </div>
       )}

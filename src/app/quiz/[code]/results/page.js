@@ -180,8 +180,67 @@ function ResultsContent() {
         </div>
       )}
 
+      {/* 3D Kahoot-style Podium */}
+      {participants.length >= 2 && (
+        <div className="podium-section animate-fade-in-up">
+          <div className="podium-container">
+            {/* Rank 2 (Silver) */}
+            {participants[1] && (
+              <div className="podium-step rank-2">
+                <div className="podium-user-header">
+                  <div className="podium-avatar-wrapper">
+                    <span>{participants[1].avatar || "🥈"}</span>
+                  </div>
+                  <span className="podium-name">{participants[1].name}</span>
+                  <span className="podium-score">{participants[1].score || 0} pts</span>
+                </div>
+                <div className="podium-pillar">
+                  <span className="pillar-rank">2</span>
+                  <span className="pillar-medal">🥈</span>
+                </div>
+              </div>
+            )}
+
+            {/* Rank 1 (Gold) */}
+            {participants[0] && (
+              <div className="podium-step rank-1">
+                <div className="podium-user-header">
+                  <div className="podium-avatar-wrapper">
+                    <span className="podium-crown">👑</span>
+                    <span>{participants[0].avatar || "🥇"}</span>
+                  </div>
+                  <span className="podium-name">{participants[0].name}</span>
+                  <span className="podium-score">{participants[0].score || 0} pts</span>
+                </div>
+                <div className="podium-pillar">
+                  <span className="pillar-rank">1</span>
+                  <span className="pillar-medal">🥇</span>
+                </div>
+              </div>
+            )}
+
+            {/* Rank 3 (Bronze) */}
+            {participants[2] && (
+              <div className="podium-step rank-3">
+                <div className="podium-user-header">
+                  <div className="podium-avatar-wrapper">
+                    <span>{participants[2].avatar || "🥉"}</span>
+                  </div>
+                  <span className="podium-name">{participants[2].name}</span>
+                  <span className="podium-score">{participants[2].score || 0} pts</span>
+                </div>
+                <div className="podium-pillar">
+                  <span className="pillar-rank">3</span>
+                  <span className="pillar-medal">🥉</span>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       <div className="leaderboard">
-        <h2>Leaderboard</h2>
+        <h2>Peringkat Peserta</h2>
         {participants.map((p, index) => (
           <div
             key={p.id}
@@ -192,8 +251,9 @@ function ResultsContent() {
             <div className={`leaderboard-rank ${getRankClass(index)}`}>
               {getRankDisplay(index)}
             </div>
-            <span className="leaderboard-name">
-              {p.name}
+            <span className="leaderboard-name" style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+              <span style={{ fontSize: "1.1rem" }}>{p.avatar || "👤"}</span>
+              <span>{p.name}</span>
               {p.id === participantId && (
                 <span style={{ fontSize: "0.75rem", opacity: 0.7, marginLeft: "0.5rem" }}>
                   (Anda)

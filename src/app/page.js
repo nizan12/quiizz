@@ -5,11 +5,16 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { db, collection, query, where, getDocs } from "@/lib/firebase";
 
+const AVATAR_OPTIONS = ["🦁", "🦊", "🚀", "🐼", "⚡", "🦄", "🎯", "🐯", "👑", "🦉", "🔥", "🐱"];
+
 export default function HomePage() {
   const router = useRouter();
   const [inviteCode, setInviteCode] = useState("");
   const [playerName, setPlayerName] = useState("");
   const [playerNim, setPlayerNim] = useState("");
+  const [selectedAvatar, setSelectedAvatar] = useState(
+    AVATAR_OPTIONS[Math.floor(Math.random() * AVATAR_OPTIONS.length)]
+  );
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
@@ -48,7 +53,9 @@ export default function HomePage() {
       router.push(
         `/quiz/${inviteCode.trim().toUpperCase()}?name=${encodeURIComponent(
           playerName.trim()
-        )}&nim=${encodeURIComponent(playerNim.trim())}`
+        )}&nim=${encodeURIComponent(playerNim.trim())}&avatar=${encodeURIComponent(
+          selectedAvatar
+        )}`
       );
     } catch (err) {
       console.error("Error joining quiz:", err);
@@ -125,6 +132,25 @@ export default function HomePage() {
                   maxLength={20}
                 />
               </div>
+
+              <div className="input-group">
+                <label>Pilih Avatar ({selectedAvatar})</label>
+                <div className="avatar-picker-grid">
+                  {AVATAR_OPTIONS.map((av) => (
+                    <button
+                      key={av}
+                      type="button"
+                      className={`avatar-badge-btn ${
+                        selectedAvatar === av ? "selected" : ""
+                      }`}
+                      onClick={() => setSelectedAvatar(av)}
+                    >
+                      {av}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
               {error && (
                 <p style={{ color: "var(--answer-red)", fontSize: "0.85rem", fontWeight: 700, marginTop: "0.5rem" }}>
                   {error}
