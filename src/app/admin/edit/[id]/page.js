@@ -1,9 +1,10 @@
 "use client";
 
-import { useState, useEffect, use } from "react";
+import { useState, useEffect, use, useRef } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { db, doc, getDoc, updateDoc, collection } from "@/lib/firebase";
+import { ONLINE_MUSIC_PRESETS, getAudioSource } from "@/lib/onlineMusic";
 
 export default function EditQuizPage({ params }) {
   const { id } = use(params);
@@ -22,7 +23,11 @@ export default function EditQuizPage({ params }) {
     },
   ]);
   const [musicList, setMusicList] = useState([]);
+  const [musicType, setMusicType] = useState("preset");
   const [selectedMusic, setSelectedMusic] = useState("");
+  const [customMusicUrl, setCustomMusicUrl] = useState("");
+  const [previewPlaying, setPreviewPlaying] = useState(false);
+  const previewAudioRef = useRef(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [showAiken, setShowAiken] = useState(false);
@@ -48,7 +53,21 @@ export default function EditQuizPage({ params }) {
           setTitle(data.title || "");
           setDescription(data.description || "");
           setTimePerQuestion(data.timePerQuestion || 30);
-          setSelectedMusic(data.musicFileName || "");
+          
+          const music = data.musicFileName || "";
+          if (!music) {
+            setMusicType("none");
+            setSelectedMusic("");
+          } else if (ONLINE_MUSIC_PRESETS.some((p) => p.url === music)) {
+            setMusicType("preset");
+            setSelectedMusic(music);
+          } else if (music.startsWith("http")) {
+            setMusicType("custom");
+            setCustomMusicUrl(music);
+          } else {
+            setMusicType("local");
+            setSelectedMusic(music);
+          }
           
           if (data.questions && data.questions.length > 0) {
              setQuestions(data.questions);
@@ -233,6 +252,45 @@ export default function EditQuizPage({ params }) {
     e.target.value = null; // reset input
   };
 
+  const getActiveMusicSource = () => {
+    if (musicType === "preset") return selectedMusic;
+    if (musicType === "local") return selectedMusic ? `/music/${selectedMusic}` : "";
+    if (musicType === "custom") return customMusicUrl.trim();
+    return "";
+  };
+
+  const togglePreview = () => {
+    if (!previewAudioRef.current) return;
+    if (previewPlaying) {
+      if (previewAudioRef.current) {
+        previewAudioRef.current.pause();
+      }
+      setPreviewPlaying(false);
+    } else {
+      const src = getActiveMusicSource();
+      if (!src) {
+        setError("Pilih atau masukkan musik terlebih dahulu untuk preview.");
+        return;
+      }
+      if (previewAudioRef.current) {
+        previewAudioRef.current.src = src;
+        const playPromise = previewAudioRef.current.play();
+        if (playPromise !== undefined) {
+          playPromise
+            .then(() => setPreviewPlaying(true))
+            .catch((err) => {
+              if (err.name === "AbortError" || err.name === "NotAllowedError") {
+                return;
+              }
+              console.warn("Preview audio warning:", err);
+              setError("Gagal memutar audio preview.");
+              setPreviewPlaying(false);
+            });
+        }
+      }
+    }
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError("");
@@ -259,11 +317,18 @@ export default function EditQuizPage({ params }) {
     setSaving(true);
 
     try {
+      const finalMusic =
+        musicType === "none"
+          ? ""
+          : musicType === "custom"
+          ? customMusicUrl.trim()
+          : selectedMusic;
+
       const quizData = {
         title: title.trim(),
         description: description.trim(),
         timePerQuestion: Number(timePerQuestion),
-        musicFileName: selectedMusic,
+        musicFileName: finalMusic,
         questions: questions.map((q, i) => ({
           id: i + 1,
           question: q.question.trim(),
@@ -290,6 +355,13 @@ export default function EditQuizPage({ params }) {
     "option-label-d",
   ];
 
+  const totalPoints = questions.reduce(
+    (sum, q) => sum + (Number(q.points) || 0),
+    0
+  );
+  const estimatedSeconds = questions.length * (Number(timePerQuestion) || 30);
+  const estimatedMinutes = Math.max(1, Math.ceil(estimatedSeconds / 60));
+
   if (loading) {
     return (
       <div className="loading-container" style={{ minHeight: "100vh", background: "var(--bg-light)" }}>
@@ -306,256 +378,504 @@ export default function EditQuizPage({ params }) {
           QuizMaster<span className="brand-dot"></span>
         </Link>
         <div className="navbar-links">
-          <Link href="/admin" className="btn btn-light btn-sm">
+          <Link href="/admin" className="btn btn-secondary btn-sm">
             Dashboard
           </Link>
         </div>
       </nav>
 
-      <div className="creator-container">
-        <h1 className="animate-fade-in-up">Edit Quiz</h1>
-
-        <form className="creator-form" onSubmit={handleSubmit}>
-          {/* Quiz Info */}
-          <div className="creator-section animate-fade-in-up delay-100">
-            <h2>Informasi Quiz</h2>
-            <div className="input-group" style={{ marginBottom: "1rem" }}>
-              <label htmlFor="quiz-title">Judul Quiz</label>
-              <input
-                id="quiz-title"
-                type="text"
-                className="input"
-                placeholder="Contoh: Quiz Matematika Kelas 10"
-                value={title}
-                onChange={(e) => setTitle(e.target.value)}
-                maxLength={100}
-              />
-            </div>
-            <div className="input-group" style={{ marginBottom: "1rem" }}>
-              <label htmlFor="quiz-desc">Deskripsi</label>
-              <textarea
-                id="quiz-desc"
-                className="input"
-                placeholder="Deskripsi singkat tentang quiz ini..."
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-                maxLength={300}
-              />
-            </div>
-            <div className="input-group">
-              <label htmlFor="time-per-q">Waktu per Soal (detik)</label>
-              <input
-                id="time-per-q"
-                type="number"
-                className="input"
-                value={timePerQuestion}
-                onChange={(e) => setTimePerQuestion(e.target.value)}
-                min={5}
-                max={120}
-                style={{ maxWidth: "150px" }}
-              />
-            </div>
-            <div className="input-group" style={{ marginTop: "1rem" }}>
-              <label htmlFor="music-select">Background Music</label>
-              <select
-                id="music-select"
-                className="input"
-                value={selectedMusic}
-                onChange={(e) => setSelectedMusic(e.target.value)}
-              >
-                <option value="">-- Tanpa Musik --</option>
-                {musicList.map(m => (
-                  <option key={m} value={m}>{m}</option>
-                ))}
-              </select>
-            </div>
+      <div className="creator-landscape-container">
+        <div className="creator-landscape-header">
+          <div>
+            <h1>Edit Quiz</h1>
+            <p className="creator-landscape-subtitle">
+              Perbarui pengaturan quiz dan modifikasi pertanyaan interaktif.
+            </p>
           </div>
+          <button
+            type="button"
+            onClick={() => router.push(`/admin/quiz/${id}`)}
+            className="btn btn-secondary btn-sm"
+          >
+            Kembali ke Detail
+          </button>
+        </div>
 
-          {/* Questions */}
-          <div className="creator-section animate-fade-in-up delay-200">
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1.5rem" }}>
-              <h2 style={{ marginBottom: 0 }}>Pertanyaan</h2>
-              <div style={{ display: "flex", gap: "0.5rem" }}>
-                <button
-                  type="button"
-                  className="btn btn-light btn-sm"
-                  onClick={() => setShowAiken(!showAiken)}
-                >
-                  {showAiken ? "Batal Aiken" : "Import Aiken"}
-                </button>
-                <label className="btn btn-light btn-sm" style={{ cursor: "pointer", margin: 0, display: "flex", alignItems: "center" }}>
-                  Import XML
-                  <input type="file" accept=".xml" style={{ display: "none" }} onChange={handleXMLImport} />
-                </label>
-              </div>
-            </div>
-
-            {showAiken && (
-              <div style={{ marginBottom: "2rem", padding: "1rem", background: "var(--bg-light)", borderRadius: "var(--radius-md)" }}>
-                <h3 style={{ fontSize: "0.9rem", marginBottom: "0.5rem" }}>Paste Text Format Aiken</h3>
-                <p style={{ fontSize: "0.8rem", color: "var(--text-medium)", marginBottom: "1rem" }}>
-                  Contoh format:<br/>
-                  Siapa penemu lampu pijar?<br/>
-                  A. Thomas Edison<br/>
-                  B. Albert Einstein<br/>
-                  C. Nikola Tesla<br/>
-                  D. Isaac Newton<br/>
-                  ANSWER: A
-                </p>
-                <textarea
-                  className="input"
-                  style={{ width: "100%", height: "150px", marginBottom: "1rem" }}
-                  value={aikenText}
-                  onChange={(e) => setAikenText(e.target.value)}
-                  placeholder="Paste soal-soal Anda di sini..."
-                ></textarea>
-                <button
-                  type="button"
-                  className="btn btn-purple btn-sm"
-                  onClick={handleAikenImport}
-                >
-                  Proses Import
-                </button>
-              </div>
-            )}
-
-            {questions.map((q, qIndex) => (
-              <div key={qIndex} className="question-card">
-                <div className="question-card-header">
-                  <span className="question-number">
-                    Soal {qIndex + 1}
-                  </span>
-                  {questions.length > 1 && (
-                    <button
-                      type="button"
-                      className="btn btn-danger btn-sm"
-                      onClick={() => removeQuestion(qIndex)}
-                    >
-                      Hapus
-                    </button>
-                  )}
-                </div>
-
+        <form onSubmit={handleSubmit}>
+          <div className="creator-landscape-grid">
+            {/* Left Column: Sidebar / Sticky Settings */}
+            <aside className="creator-sidebar">
+              {/* Card 1: Quiz Information */}
+              <div className="creator-card">
+                <h3>Informasi Quiz</h3>
                 <div className="input-group" style={{ marginBottom: "1rem" }}>
-                  <label>Pertanyaan</label>
-                  <textarea
+                  <label htmlFor="quiz-title">Judul Quiz</label>
+                  <input
+                    id="quiz-title"
+                    type="text"
                     className="input"
-                    placeholder="Tulis pertanyaan di sini..."
-                    value={q.question}
-                    onChange={(e) =>
-                      updateQuestion(qIndex, "question", e.target.value)
-                    }
-                    maxLength={500}
+                    placeholder="Contoh: Quiz Matematika Kelas 10"
+                    value={title}
+                    onChange={(e) => setTitle(e.target.value)}
+                    maxLength={100}
                   />
                 </div>
-
-                <label
-                  style={{
-                    fontSize: "0.8rem",
-                    fontWeight: 700,
-                    color: "var(--text-medium)",
-                    marginBottom: "0.5rem",
-                    display: "block",
-                    textTransform: "uppercase",
-                    letterSpacing: "0.05em",
-                  }}
-                >
-                  Opsi Jawaban
-                </label>
-                <div className="options-grid">
-                  {q.options.map((opt, optIndex) => (
-                    <div key={optIndex} className="option-input-wrapper">
-                      <div className={`option-label ${optionColorClasses[optIndex]}`}>
-                        {optionLabels[optIndex]}
-                      </div>
-                      <input
-                        type="text"
-                        className="input"
-                        placeholder={`Opsi ${optionLabels[optIndex]}`}
-                        value={opt}
-                        onChange={(e) =>
-                          updateOption(qIndex, optIndex, e.target.value)
-                        }
-                        maxLength={200}
-                      />
-                    </div>
-                  ))}
+                <div className="input-group" style={{ marginBottom: "1rem" }}>
+                  <label htmlFor="quiz-desc">Deskripsi</label>
+                  <textarea
+                    id="quiz-desc"
+                    className="input"
+                    rows={3}
+                    placeholder="Deskripsi singkat materi dan petunjuk pengerjaan..."
+                    value={description}
+                    onChange={(e) => setDescription(e.target.value)}
+                    maxLength={300}
+                  />
                 </div>
-
-                <div className="correct-answer-section">
-                  <label>Jawaban Benar:</label>
-                  <select
-                    value={q.correctAnswer}
-                    onChange={(e) =>
-                      updateQuestion(
-                        qIndex,
-                        "correctAnswer",
-                        Number(e.target.value)
-                      )
-                    }
-                  >
-                    {optionLabels.map((label, i) => (
-                      <option key={i} value={i}>
-                        {label}
-                      </option>
-                    ))}
-                  </select>
-                  <label style={{ marginLeft: "auto" }}>Poin:</label>
+                <div className="input-group">
+                  <label htmlFor="time-per-q">Waktu per Soal (detik)</label>
                   <input
+                    id="time-per-q"
                     type="number"
                     className="input"
-                    value={q.points}
-                    onChange={(e) =>
-                      updateQuestion(qIndex, "points", Number(e.target.value))
-                    }
-                    min={1}
-                    max={100}
-                    style={{ width: "80px" }}
+                    value={timePerQuestion}
+                    onChange={(e) => setTimePerQuestion(e.target.value)}
+                    min={5}
+                    max={120}
+                    style={{ maxWidth: "140px" }}
                   />
                 </div>
               </div>
-            ))}
 
-            <button
-              type="button"
-              className="add-question-btn"
-              onClick={addQuestion}
-            >
-              + Tambah Pertanyaan
-            </button>
-          </div>
+              {/* Card 2: Background Music */}
+              <div className="creator-card">
+                <h3>Background Music</h3>
+                <div style={{ display: "flex", gap: "6px", marginBottom: "12px", flexWrap: "wrap" }}>
+                  <button
+                    type="button"
+                    className={`btn btn-sm ${musicType === "preset" ? "btn-purple" : "btn-light"}`}
+                    onClick={() => {
+                      setMusicType("preset");
+                      setSelectedMusic(ONLINE_MUSIC_PRESETS[0].url);
+                      if (previewPlaying && previewAudioRef.current) previewAudioRef.current.pause();
+                      setPreviewPlaying(false);
+                    }}
+                  >
+                    Preset Online
+                  </button>
+                  <button
+                    type="button"
+                    className={`btn btn-sm ${musicType === "local" ? "btn-purple" : "btn-light"}`}
+                    onClick={() => {
+                      setMusicType("local");
+                      setSelectedMusic(musicList[0] || "");
+                      if (previewPlaying && previewAudioRef.current) previewAudioRef.current.pause();
+                      setPreviewPlaying(false);
+                    }}
+                  >
+                    Lokal ({musicList.length})
+                  </button>
+                  <button
+                    type="button"
+                    className={`btn btn-sm ${musicType === "custom" ? "btn-purple" : "btn-light"}`}
+                    onClick={() => {
+                      setMusicType("custom");
+                      if (previewPlaying && previewAudioRef.current) previewAudioRef.current.pause();
+                      setPreviewPlaying(false);
+                    }}
+                  >
+                    URL Custom
+                  </button>
+                  <button
+                    type="button"
+                    className={`btn btn-sm ${musicType === "none" ? "btn-purple" : "btn-light"}`}
+                    onClick={() => {
+                      setMusicType("none");
+                      setSelectedMusic("");
+                      setCustomMusicUrl("");
+                      if (previewPlaying && previewAudioRef.current) previewAudioRef.current.pause();
+                      setPreviewPlaying(false);
+                    }}
+                  >
+                    Tanpa Musik
+                  </button>
+                </div>
 
-          {error && (
-            <p
-              style={{
-                color: "var(--answer-red)",
-                fontSize: "0.9rem",
-                fontWeight: 700,
-                textAlign: "center",
-              }}
-            >
-              {error}
-            </p>
-          )}
+                {musicType === "preset" && (
+                  <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+                    <select
+                      className="input"
+                      style={{ flex: 1, minWidth: 0 }}
+                      value={selectedMusic}
+                      onChange={(e) => {
+                        setSelectedMusic(e.target.value);
+                        if (previewPlaying && previewAudioRef.current) previewAudioRef.current.pause();
+                        setPreviewPlaying(false);
+                      }}
+                    >
+                      {ONLINE_MUSIC_PRESETS.map((p) => (
+                        <option key={p.id} value={p.url}>
+                          {p.name}
+                        </option>
+                      ))}
+                    </select>
+                    <button
+                      type="button"
+                      className={`btn btn-sm ${previewPlaying ? "btn-danger" : "btn-purple"}`}
+                      onClick={togglePreview}
+                      style={{ flexShrink: 0, whiteSpace: "nowrap", display: "inline-flex", alignItems: "center", gap: "6px" }}
+                    >
+                      {previewPlaying ? (
+                        <>
+                          <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
+                            <rect x="6" y="4" width="4" height="16" />
+                            <rect x="14" y="4" width="4" height="16" />
+                          </svg>
+                          <span>Stop</span>
+                        </>
+                      ) : (
+                        <>
+                          <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
+                            <polygon points="5 3 19 12 5 21 5 3" />
+                          </svg>
+                          <span>Tes Audio</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+                )}
 
-          <div style={{ display: "flex", gap: "1rem", justifyContent: "flex-end" }}>
-            <button type="button" onClick={() => router.push(`/admin/quiz/${id}`)} className="btn btn-light">
-              Batal
-            </button>
-            <button
-              type="submit"
-              className="btn btn-purple btn-lg"
-              disabled={saving}
-            >
-              {saving ? (
-                <>
-                  <span className="spinner spinner-sm"></span>
-                  Menyimpan...
-                </>
-              ) : (
-                "Simpan Quiz"
+                {musicType === "local" && (
+                  <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+                    <select
+                      className="input"
+                      style={{ flex: 1, minWidth: 0 }}
+                      value={selectedMusic}
+                      onChange={(e) => {
+                        setSelectedMusic(e.target.value);
+                        if (previewPlaying && previewAudioRef.current) previewAudioRef.current.pause();
+                        setPreviewPlaying(false);
+                      }}
+                    >
+                      <option value="">-- Pilih File Musik --</option>
+                      {musicList.map((m) => (
+                        <option key={m} value={m}>
+                          {m}
+                        </option>
+                      ))}
+                    </select>
+                    <button
+                      type="button"
+                      className={`btn btn-sm ${previewPlaying ? "btn-danger" : "btn-purple"}`}
+                      onClick={togglePreview}
+                      style={{ flexShrink: 0, whiteSpace: "nowrap", display: "inline-flex", alignItems: "center", gap: "6px" }}
+                    >
+                      {previewPlaying ? (
+                        <>
+                          <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
+                            <rect x="6" y="4" width="4" height="16" />
+                            <rect x="14" y="4" width="4" height="16" />
+                          </svg>
+                          <span>Stop</span>
+                        </>
+                      ) : (
+                        <>
+                          <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
+                            <polygon points="5 3 19 12 5 21 5 3" />
+                          </svg>
+                          <span>Tes Audio</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+                )}
+
+                {musicType === "custom" && (
+                  <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+                    <input
+                      type="url"
+                      className="input"
+                      style={{ flex: 1, minWidth: 0 }}
+                      placeholder="https://.../music.mp3"
+                      value={customMusicUrl}
+                      onChange={(e) => {
+                        setCustomMusicUrl(e.target.value);
+                        if (previewPlaying && previewAudioRef.current) previewAudioRef.current.pause();
+                        setPreviewPlaying(false);
+                      }}
+                    />
+                    <button
+                      type="button"
+                      className={`btn btn-sm ${previewPlaying ? "btn-danger" : "btn-purple"}`}
+                      onClick={togglePreview}
+                      style={{ flexShrink: 0, whiteSpace: "nowrap", display: "inline-flex", alignItems: "center", gap: "6px" }}
+                    >
+                      {previewPlaying ? (
+                        <>
+                          <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
+                            <rect x="6" y="4" width="4" height="16" />
+                            <rect x="14" y="4" width="4" height="16" />
+                          </svg>
+                          <span>Stop</span>
+                        </>
+                      ) : (
+                        <>
+                          <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
+                            <polygon points="5 3 19 12 5 21 5 3" />
+                          </svg>
+                          <span>Tes Audio</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+                )}
+
+                <audio
+                  ref={previewAudioRef}
+                  onEnded={() => setPreviewPlaying(false)}
+                  style={{ display: "none" }}
+                />
+              </div>
+
+              {/* Card 3: Summary Stats */}
+              <div className="creator-card">
+                <h4>Ringkasan Quiz</h4>
+                <div className="creator-stat-row">
+                  <span>Jumlah Pertanyaan</span>
+                  <strong>{questions.length}</strong>
+                </div>
+                <div className="creator-stat-row">
+                  <span>Total Poin Maksimal</span>
+                  <strong>{totalPoints}</strong>
+                </div>
+                <div className="creator-stat-row">
+                  <span>Perkiraan Durasi</span>
+                  <strong>~{estimatedMinutes} menit</strong>
+                </div>
+              </div>
+
+              {/* Card 4: Actions */}
+              <div className="creator-card creator-actions-card">
+                {error && (
+                  <div
+                    style={{
+                      background: "rgba(226, 27, 60, 0.1)",
+                      border: "1px solid var(--answer-red)",
+                      color: "var(--answer-red)",
+                      borderRadius: "var(--radius-sm)",
+                      padding: "10px",
+                      fontSize: "0.82rem",
+                      fontWeight: 700,
+                    }}
+                  >
+                    {error}
+                  </div>
+                )}
+
+                <button
+                  type="submit"
+                  className="btn btn-purple btn-lg"
+                  style={{ width: "100%" }}
+                  disabled={saving}
+                >
+                  {saving ? (
+                    <>
+                      <span className="spinner spinner-sm"></span>
+                      Menyimpan Perubahan...
+                    </>
+                  ) : (
+                    "Simpan Perubahan"
+                  )}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => router.push(`/admin/quiz/${id}`)}
+                  className="btn btn-light"
+                  style={{ width: "100%" }}
+                >
+                  Batal
+                </button>
+              </div>
+            </aside>
+
+            {/* Right Column: Questions List & Import */}
+            <main className="creator-main">
+              {/* Main Questions Header */}
+              <div className="creator-main-header">
+                <h2>
+                  Daftar Pertanyaan
+                  <span className="creator-count-badge">
+                    {questions.length} Soal
+                  </span>
+                </h2>
+                <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
+                  <button
+                    type="button"
+                    className="btn btn-light btn-sm"
+                    onClick={() => setShowAiken(!showAiken)}
+                  >
+                    {showAiken ? "Tutup Import Aiken" : "Import Format Aiken"}
+                  </button>
+                  <label
+                    className="btn btn-light btn-sm"
+                    style={{ cursor: "pointer", margin: 0, display: "inline-flex", alignItems: "center" }}
+                  >
+                    Import XML
+                    <input
+                      type="file"
+                      accept=".xml"
+                      style={{ display: "none" }}
+                      onChange={handleXMLImport}
+                    />
+                  </label>
+                </div>
+              </div>
+
+              {/* Aiken Import Drawer */}
+              {showAiken && (
+                <div className="creator-card" style={{ borderLeft: "4px solid var(--kahoot-purple)" }}>
+                  <h3 style={{ fontSize: "0.95rem", marginBottom: "0.5rem" }}>
+                    Import Cepat Format Aiken
+                  </h3>
+                  <p style={{ fontSize: "0.8rem", color: "var(--text-medium)", marginBottom: "0.75rem", lineHeight: 1.5 }}>
+                    Format teks Aiken: Baris pertama soal, baris pilihan diawali huruf kapital (A., B., C., D.), dan diakhiri dengan <code>ANSWER: X</code>.
+                  </p>
+                  <textarea
+                    className="input"
+                    style={{ width: "100%", height: "130px", marginBottom: "0.75rem", fontFamily: "monospace", fontSize: "0.85rem" }}
+                    value={aikenText}
+                    onChange={(e) => setAikenText(e.target.value)}
+                    placeholder="Contoh:&#10;Ibu kota Indonesia adalah?&#10;A. Surabaya&#10;B. Nusantara&#10;C. Bandung&#10;D. Medan&#10;ANSWER: B"
+                  />
+                  <div style={{ display: "flex", gap: "8px" }}>
+                    <button
+                      type="button"
+                      className="btn btn-purple btn-sm"
+                      onClick={handleAikenImport}
+                    >
+                      Proses & Tambahkan
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn-light btn-sm"
+                      onClick={() => setShowAiken(false)}
+                    >
+                      Batal
+                    </button>
+                  </div>
+                </div>
               )}
-            </button>
+
+              {/* Questions List */}
+              {questions.map((q, qIndex) => (
+                <div key={qIndex} className="question-card">
+                  <div className="question-card-header">
+                    <span className="question-number">
+                      Soal Nomor {qIndex + 1}
+                    </span>
+                    {questions.length > 1 && (
+                      <button
+                        type="button"
+                        className="btn btn-danger btn-sm"
+                        onClick={() => removeQuestion(qIndex)}
+                        title="Hapus soal ini"
+                      >
+                        Hapus Soal
+                      </button>
+                    )}
+                  </div>
+
+                  <div className="input-group" style={{ marginBottom: "1rem" }}>
+                    <label>Isi Pertanyaan</label>
+                    <textarea
+                      className="input"
+                      rows={2}
+                      placeholder="Ketik pertanyaan di sini..."
+                      value={q.question}
+                      onChange={(e) =>
+                        updateQuestion(qIndex, "question", e.target.value)
+                      }
+                      maxLength={500}
+                    />
+                  </div>
+
+                  <label
+                    style={{
+                      fontSize: "0.78rem",
+                      fontWeight: 700,
+                      color: "var(--text-medium)",
+                      marginBottom: "0.5rem",
+                      display: "block",
+                      textTransform: "uppercase",
+                      letterSpacing: "0.05em",
+                    }}
+                  >
+                    Pilihan Jawaban
+                  </label>
+                  <div className="options-grid">
+                    {q.options.map((opt, optIndex) => (
+                      <div key={optIndex} className="option-input-wrapper">
+                        <div className={`option-label ${optionColorClasses[optIndex]}`}>
+                          {optionLabels[optIndex]}
+                        </div>
+                        <input
+                          type="text"
+                          className="input"
+                          placeholder={`Jawaban ${optionLabels[optIndex]}`}
+                          value={opt}
+                          onChange={(e) =>
+                            updateOption(qIndex, optIndex, e.target.value)
+                          }
+                          maxLength={200}
+                        />
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="correct-answer-section">
+                    <label>Kunci Jawaban Benar:</label>
+                    <select
+                      value={q.correctAnswer}
+                      onChange={(e) =>
+                        updateQuestion(
+                          qIndex,
+                          "correctAnswer",
+                          Number(e.target.value)
+                        )
+                      }
+                    >
+                      {optionLabels.map((label, i) => (
+                        <option key={i} value={i}>
+                          Opsi {label}
+                        </option>
+                      ))}
+                    </select>
+
+                    <label style={{ marginLeft: "auto" }}>Poin:</label>
+                    <input
+                      type="number"
+                      className="input"
+                      value={q.points}
+                      onChange={(e) =>
+                        updateQuestion(qIndex, "points", Number(e.target.value))
+                      }
+                      min={1}
+                      max={100}
+                      style={{ width: "80px" }}
+                    />
+                  </div>
+                </div>
+              ))}
+
+              <button
+                type="button"
+                className="add-question-btn"
+                onClick={addQuestion}
+              >
+                + Tambah Pertanyaan
+              </button>
+            </main>
           </div>
         </form>
       </div>

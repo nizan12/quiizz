@@ -110,19 +110,25 @@ export default function QuizManagePage({ params }) {
         if (quiz?.startedAt) {
           const elapsed = (Date.now() - quiz.startedAt) / 1000;
           const duration = audio.duration;
-          if (duration > 0) {
+          if (duration > 0 && isFinite(duration)) {
             audio.currentTime = elapsed % duration;
-          } else {
-            audio.currentTime = elapsed;
           }
         }
-        audio.play().catch((err) => console.error("Audio play error:", err));
+        const playPromise = audio.play();
+        if (playPromise !== undefined) {
+          playPromise.catch((err) => {
+            if (err.name === "AbortError" || err.name === "NotAllowedError") {
+              return;
+            }
+            console.warn("Audio play warning:", err);
+          });
+        }
       };
 
       if (audio.readyState >= 1) { // HAVE_METADATA
         syncAudio();
       } else {
-        audio.addEventListener("loadedmetadata", syncAudio);
+        audio.addEventListener("loadedmetadata", syncAudio, { once: true });
         return () => audio.removeEventListener("loadedmetadata", syncAudio);
       }
     }
@@ -196,7 +202,7 @@ export default function QuizManagePage({ params }) {
       {quiz.musicFileName && quiz.status === "active" && (
         <audio
           ref={audioRef}
-          src={`/music/${quiz.musicFileName}`}
+          src={quiz.musicFileName.startsWith("http") ? quiz.musicFileName : `/music/${quiz.musicFileName}`}
           loop
           muted={isMuted}
           style={{ display: "none" }}
@@ -279,7 +285,26 @@ export default function QuizManagePage({ params }) {
                   className="btn btn-light btn-sm"
                   onClick={() => setIsMuted(!isMuted)}
                 >
-                  {isMuted ? "🔇 Unmute" : "🔊 Mute"}
+                  {isMuted ? (
+                    <>
+                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <line x1="1" y1="1" x2="23" y2="23"></line>
+                        <path d="M9 9v3a3 3 0 0 0 5.12 2.12M15 9.34V4a3 3 0 0 0-5.94-.6"></path>
+                        <path d="M17 16.95A7 7 0 0 1 5 12v-2m14 0v2a7 7 0 0 1-.11 1.23"></path>
+                        <line x1="12" y1="19" x2="12" y2="23"></line>
+                        <line x1="8" y1="23" x2="16" y2="23"></line>
+                      </svg>
+                      <span>Unmute</span>
+                    </>
+                  ) : (
+                    <>
+                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
+                        <path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"></path>
+                      </svg>
+                      <span>Mute</span>
+                    </>
+                  )}
                 </button>
               )}
             </div>

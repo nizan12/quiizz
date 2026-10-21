@@ -12,6 +12,7 @@ import {
   query,
   orderBy,
 } from "@/lib/firebase";
+import { getPixelbotUrl } from "@/lib/avatar";
 
 function Confetti() {
   const [pieces, setPieces] = useState([]);
@@ -189,7 +190,13 @@ function ResultsContent() {
               <div className="podium-step rank-2">
                 <div className="podium-user-header">
                   <div className="podium-avatar-wrapper">
-                    <span>{participants[1].avatar || "🥈"}</span>
+                    <img
+                      src={getPixelbotUrl(participants[1].avatar)}
+                      alt={participants[1].name}
+                      width="48"
+                      height="48"
+                      style={{ borderRadius: "50%" }}
+                    />
                   </div>
                   <span className="podium-name">{participants[1].name}</span>
                   <span className="podium-score">{participants[1].score || 0} pts</span>
@@ -207,7 +214,13 @@ function ResultsContent() {
                 <div className="podium-user-header">
                   <div className="podium-avatar-wrapper">
                     <span className="podium-crown">👑</span>
-                    <span>{participants[0].avatar || "🥇"}</span>
+                    <img
+                      src={getPixelbotUrl(participants[0].avatar)}
+                      alt={participants[0].name}
+                      width="58"
+                      height="58"
+                      style={{ borderRadius: "50%" }}
+                    />
                   </div>
                   <span className="podium-name">{participants[0].name}</span>
                   <span className="podium-score">{participants[0].score || 0} pts</span>
@@ -224,7 +237,13 @@ function ResultsContent() {
               <div className="podium-step rank-3">
                 <div className="podium-user-header">
                   <div className="podium-avatar-wrapper">
-                    <span>{participants[2].avatar || "🥉"}</span>
+                    <img
+                      src={getPixelbotUrl(participants[2].avatar)}
+                      alt={participants[2].name}
+                      width="48"
+                      height="48"
+                      style={{ borderRadius: "50%" }}
+                    />
                   </div>
                   <span className="podium-name">{participants[2].name}</span>
                   <span className="podium-score">{participants[2].score || 0} pts</span>
@@ -251,8 +270,14 @@ function ResultsContent() {
             <div className={`leaderboard-rank ${getRankClass(index)}`}>
               {getRankDisplay(index)}
             </div>
-            <span className="leaderboard-name" style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-              <span style={{ fontSize: "1.1rem" }}>{p.avatar || "👤"}</span>
+            <span className="leaderboard-name" style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+              <img
+                src={getPixelbotUrl(p.avatar)}
+                alt={p.name}
+                width="28"
+                height="28"
+                style={{ borderRadius: "50%", background: "rgba(255,255,255,0.2)" }}
+              />
               <span>{p.name}</span>
               {p.id === participantId && (
                 <span style={{ fontSize: "0.75rem", opacity: 0.7, marginLeft: "0.5rem" }}>

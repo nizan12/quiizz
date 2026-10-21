@@ -16,6 +16,7 @@ import {
   serverTimestamp,
 } from "@/lib/firebase";
 import { sfx } from "@/lib/sounds";
+import { getPixelbotUrl } from "@/lib/avatar";
 
 export default function QuizPlayPage({ params }) {
   const { code } = use(params);
@@ -23,7 +24,7 @@ export default function QuizPlayPage({ params }) {
   const router = useRouter();
   const playerName = searchParams.get("name") || "Anonim";
   const playerNim = searchParams.get("nim") || "";
-  const playerAvatar = searchParams.get("avatar") || "🦁";
+  const playerAvatar = searchParams.get("avatar") || "Alpha";
 
   const [quizId, setQuizId] = useState(null);
   const [quiz, setQuiz] = useState(null);
@@ -183,19 +184,26 @@ export default function QuizPlayPage({ params }) {
         if (quiz?.startedAt) {
           const elapsed = (Date.now() - quiz.startedAt) / 1000;
           const duration = audio.duration;
-          if (duration > 0) {
+          if (duration > 0 && isFinite(duration)) {
             audio.currentTime = elapsed % duration;
-          } else {
-            audio.currentTime = elapsed;
           }
         }
-        audio.play().catch((err) => console.error("Audio play error:", err));
+        const playPromise = audio.play();
+        if (playPromise !== undefined) {
+          playPromise.catch((err) => {
+            if (err.name === "AbortError" || err.name === "NotAllowedError") {
+              // Benign browser behavior when interrupted by load/pause or autoplay policy
+              return;
+            }
+            console.warn("Audio play warning:", err);
+          });
+        }
       };
 
       if (audio.readyState >= 1) { // HAVE_METADATA
         syncAudio();
       } else {
-        audio.addEventListener("loadedmetadata", syncAudio);
+        audio.addEventListener("loadedmetadata", syncAudio, { once: true });
         return () => audio.removeEventListener("loadedmetadata", syncAudio);
       }
     }
@@ -554,7 +562,13 @@ export default function QuizPlayPage({ params }) {
 
         <div className="lobby-card animate-scale-in">
           <div className="lobby-count-badge">
-            👥 {participantsList.length} Peserta Sudah Masuk
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ display: "inline-block", verticalAlign: "middle", marginRight: "6px" }}>
+              <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+              <circle cx="9" cy="7" r="4"></circle>
+              <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
+              <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
+            </svg>
+            <span>{participantsList.length} Peserta Sudah Masuk</span>
           </div>
 
           <h1 style={{ fontSize: "1.75rem", marginBottom: "0.25rem" }}>
@@ -576,7 +590,13 @@ export default function QuizPlayPage({ params }) {
               borderRadius: "var(--radius-full)",
             }}
           >
-            <span style={{ fontSize: "1.6rem" }}>{playerAvatar}</span>
+            <img
+              src={getPixelbotUrl(playerAvatar)}
+              alt={playerName}
+              width="38"
+              height="38"
+              style={{ borderRadius: "50%", background: "rgba(255,255,255,0.2)" }}
+            />
             <span style={{ fontWeight: 800, fontSize: "1.05rem" }}>
               {playerName}
             </span>
@@ -596,7 +616,13 @@ export default function QuizPlayPage({ params }) {
                   key={p.id}
                   className={`player-chip ${isMe ? "is-me" : ""}`}
                 >
-                  <span className="chip-avatar">{p.avatar || "👤"}</span>
+                  <img
+                    src={getPixelbotUrl(p.avatar)}
+                    alt={p.name}
+                    width="26"
+                    height="26"
+                    style={{ borderRadius: "50%", background: "rgba(255,255,255,0.2)" }}
+                  />
                   <span>{p.name}</span>
                   {isMe && <span className="you-tag">Kamu</span>}
                 </div>
@@ -720,7 +746,7 @@ export default function QuizPlayPage({ params }) {
       {quiz?.musicFileName && gameState === "playing" && (
         <audio
           ref={audioRef}
-          src={`/music/${quiz.musicFileName}`}
+          src={quiz.musicFileName.startsWith("http") ? quiz.musicFileName : `/music/${quiz.musicFileName}`}
           loop
           muted={isMuted}
           style={{ display: "none" }}
@@ -801,7 +827,20 @@ export default function QuizPlayPage({ params }) {
               }}
               title={isMuted ? "Unmute Music" : "Mute Music"}
             >
-              {isMuted ? "🔇" : "🔊"}
+              {isMuted ? (
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <line x1="1" y1="1" x2="23" y2="23"></line>
+                  <path d="M9 9v3a3 3 0 0 0 5.12 2.12M15 9.34V4a3 3 0 0 0-5.94-.6"></path>
+                  <path d="M17 16.95A7 7 0 0 1 5 12v-2m14 0v2a7 7 0 0 1-.11 1.23"></path>
+                  <line x1="12" y1="19" x2="12" y2="23"></line>
+                  <line x1="8" y1="23" x2="16" y2="23"></line>
+                </svg>
+              ) : (
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
+                  <path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"></path>
+                </svg>
+              )}
             </button>
           )}
         </div>
