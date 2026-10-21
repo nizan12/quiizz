@@ -12,6 +12,7 @@ import {
   onSnapshot,
   query,
   orderBy,
+  where,
 } from "@/lib/firebase";
 
 export default function QuizManagePage({ params }) {
@@ -24,6 +25,7 @@ export default function QuizManagePage({ params }) {
   const [toast, setToast] = useState(null);
   const [isMuted, setIsMuted] = useState(false);
   const [showQuestions, setShowQuestions] = useState(false);
+  const [floatingReactions, setFloatingReactions] = useState([]);
   const audioRef = useRef(null);
 
   // Track previous scores and ranks for animation
@@ -97,6 +99,39 @@ export default function QuizManagePage({ params }) {
 
       setParticipants(data);
     });
+
+    return () => unsub();
+  }, [id]);
+
+  // Real-time floating reactions listener from participants in waiting room
+  useEffect(() => {
+    if (!id) return;
+
+    const listenerStartTime = Date.now() - 1000;
+    const reactionsRef = collection(db, "quizzes", id, "reactions");
+    const q = query(reactionsRef, where("timestamp", ">", listenerStartTime));
+
+    const unsub = onSnapshot(
+      q,
+      (snapshot) => {
+        snapshot.docChanges().forEach((change) => {
+          if (change.type === "added") {
+            const data = change.doc.data();
+            const reactionId = change.doc.id || String(Date.now() + Math.random());
+            const emoji = data.emoji;
+            const left = data.left ?? (Math.random() * 60 + 20);
+
+            setFloatingReactions((prev) => [...prev, { id: reactionId, emoji, left }]);
+            setTimeout(() => {
+              setFloatingReactions((prev) => prev.filter((r) => r.id !== reactionId));
+            }, 2000);
+          }
+        });
+      },
+      (err) => {
+        console.warn("Reactions listener error in admin:", err);
+      }
+    );
 
     return () => unsub();
   }, [id]);
@@ -215,6 +250,17 @@ export default function QuizManagePage({ params }) {
           </div>
         </div>
       )}
+
+      {/* Floating Reactions from waiting room */}
+      {floatingReactions.map((r) => (
+        <div
+          key={r.id}
+          className="floating-reaction-item"
+          style={{ left: `${r.left}%` }}
+        >
+          {r.emoji}
+        </div>
+      ))}
 
       <nav className="navbar">
         <Link href="/" className="navbar-brand">

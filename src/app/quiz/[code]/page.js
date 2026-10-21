@@ -10,6 +10,7 @@ import {
   getDocs,
   getDoc,
   updateDoc,
+  deleteDoc,
   query,
   where,
   onSnapshot,
@@ -44,6 +45,10 @@ export default function QuizPlayPage({ params }) {
   const [warningToast, setWarningToast] = useState(null);
   const [participantsList, setParticipantsList] = useState([]);
   const [floatingReactions, setFloatingReactions] = useState([]);
+  const clientIdRef = useRef(null);
+  if (!clientIdRef.current) {
+    clientIdRef.current = "client_" + Math.random().toString(36).substring(2, 10);
+  }
   const toastTimeoutRef = useRef(null);
   const audioRef = useRef(null);
   const hasJoined = useRef(false);
@@ -165,14 +170,71 @@ export default function QuizPlayPage({ params }) {
     return () => unsub();
   }, [quizId]);
 
-  // Floating reaction helper
-  const sendReaction = (emoji) => {
-    const id = Date.now() + Math.random();
+  // Real-time floating reactions listener (synchronized across all participants)
+  useEffect(() => {
+    if (!quizId) return;
+
+    const listenerStartTime = Date.now() - 1000;
+    const reactionsRef = collection(db, "quizzes", quizId, "reactions");
+    const q = query(reactionsRef, where("timestamp", ">", listenerStartTime));
+
+    const unsub = onSnapshot(
+      q,
+      (snapshot) => {
+        snapshot.docChanges().forEach((change) => {
+          if (change.type === "added") {
+            const data = change.doc.data();
+            // Only trigger if sent by another participant
+            if (data.senderId !== clientIdRef.current) {
+              const id = change.doc.id || String(Date.now() + Math.random());
+              const emoji = data.emoji;
+              const left = data.left ?? (Math.random() * 60 + 20);
+
+              setFloatingReactions((prev) => [...prev, { id, emoji, left }]);
+              setTimeout(() => {
+                setFloatingReactions((prev) => prev.filter((r) => r.id !== id));
+              }, 2000);
+            }
+          }
+        });
+      },
+      (err) => {
+        console.warn("Reactions listener error:", err);
+      }
+    );
+
+    return () => unsub();
+  }, [quizId]);
+
+  // Floating reaction helper (instant local + broadcast to all other players)
+  const sendReaction = async (emoji) => {
+    sfx.playTick();
+    const id = "local_" + Date.now() + "_" + Math.random();
     const left = Math.random() * 60 + 20;
+
+    // 1. Instant local animation
     setFloatingReactions((prev) => [...prev, { id, emoji, left }]);
     setTimeout(() => {
       setFloatingReactions((prev) => prev.filter((r) => r.id !== id));
     }, 2000);
+
+    // 2. Broadcast to Firestore so all other participants in the waiting room see it
+    if (!quizId) return;
+    try {
+      const docRef = await addDoc(collection(db, "quizzes", quizId, "reactions"), {
+        emoji,
+        left,
+        timestamp: Date.now(),
+        senderId: clientIdRef.current,
+      });
+
+      // 3. Clean up Firestore document after 4 seconds
+      setTimeout(() => {
+        deleteDoc(doc(db, "quizzes", quizId, "reactions", docRef.id)).catch(() => {});
+      }, 4000);
+    } catch (err) {
+      console.error("Failed to broadcast reaction:", err);
+    }
   };
 
   // Synchronize audio playback
