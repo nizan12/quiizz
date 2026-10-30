@@ -11,7 +11,18 @@ import {
   doc,
   query,
   orderBy,
+  addDoc,
+  serverTimestamp,
 } from "@/lib/firebase";
+
+function generateInviteCode() {
+  const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+  let code = "";
+  for (let i = 0; i < 6; i++) {
+    code += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  return code;
+}
 
 export default function AdminPage() {
   const router = useRouter();
@@ -21,6 +32,8 @@ export default function AdminPage() {
   const [quizzes, setQuizzes] = useState([]);
   const [loading, setLoading] = useState(true);
   const [quizToDelete, setQuizToDelete] = useState(null);
+  const [duplicatingId, setDuplicatingId] = useState(null);
+  const [toast, setToast] = useState(null);
 
   const ADMIN_PIN = "30121998";
 
@@ -82,6 +95,53 @@ export default function AdminPage() {
     setQuizToDelete(null);
   };
 
+  const showToast = (message, type = "success") => {
+    setToast({ message, type });
+    setTimeout(() => setToast(null), 3000);
+  };
+
+  const handleDuplicate = async (targetQuiz) => {
+    if (duplicatingId) return;
+    setDuplicatingId(targetQuiz.id);
+    try {
+      const newInviteCode = generateInviteCode();
+      const duplicatedData = {
+        title: `${targetQuiz.title || "Quiz"} (Salinan)`,
+        description: targetQuiz.description || "",
+        inviteCode: newInviteCode,
+        status: "draft",
+        timePerQuestion: Number(targetQuiz.timePerQuestion) || 30,
+        musicFileName: targetQuiz.musicFileName || "",
+        questions: Array.isArray(targetQuiz.questions)
+          ? targetQuiz.questions.map((q, i) => ({
+              id: i + 1,
+              question: q.question || "",
+              options: Array.isArray(q.options) ? [...q.options] : ["", "", "", ""],
+              correctAnswer: typeof q.correctAnswer === "number" ? q.correctAnswer : 0,
+              points: typeof q.points === "number" ? q.points : 10,
+            }))
+          : [],
+        createdAt: serverTimestamp(),
+      };
+
+      const docRef = await addDoc(collection(db, "quizzes"), duplicatedData);
+
+      const newQuizObj = {
+        id: docRef.id,
+        ...duplicatedData,
+        createdAt: { seconds: Math.floor(Date.now() / 1000) },
+      };
+      setQuizzes((prev) => [newQuizObj, ...prev]);
+
+      showToast(`Quiz "${targetQuiz.title}" berhasil diduplikasi!`);
+    } catch (err) {
+      console.error("Error duplicating quiz:", err);
+      showToast("Gagal menduplikasi quiz. Silakan coba lagi.", "error");
+    } finally {
+      setDuplicatingId(null);
+    }
+  };
+
   const getStatusBadge = (status) => {
     const map = {
       draft: { label: "Draft", className: "badge-draft" },
@@ -129,6 +189,14 @@ export default function AdminPage() {
 
   return (
     <>
+      {toast && (
+        <div className="toast-container">
+          <div className={`toast toast-${toast.type}`}>
+            {toast.message}
+          </div>
+        </div>
+      )}
+
       <nav className="navbar">
         <Link href="/" className="navbar-brand">
           QuizMaster<span className="brand-dot"></span>
@@ -206,16 +274,35 @@ export default function AdminPage() {
                   <span>{quiz.questions ? quiz.questions.length : 0} soal</span>
                   <span className="invite-code">{quiz.inviteCode}</span>
                 </div>
-                <div style={{ display: "flex", gap: "0.5rem", marginTop: "0.75rem" }}>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.5rem", marginTop: "0.75rem" }}>
                   <button
                     className="btn btn-purple btn-sm"
-                    style={{ flex: 1 }}
                     onClick={(e) => {
                       e.stopPropagation();
                       router.push(`/admin/quiz/${quiz.id}`);
                     }}
                   >
                     Kelola
+                  </button>
+                  <button
+                    className="btn btn-light btn-sm"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      router.push(`/admin/edit/${quiz.id}`);
+                    }}
+                  >
+                    Edit
+                  </button>
+                  <button
+                    className="btn btn-light btn-sm"
+                    disabled={duplicatingId === quiz.id}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleDuplicate(quiz);
+                    }}
+                    title="Duplikasi Quiz ini"
+                  >
+                    {duplicatingId === quiz.id ? "Menyalin..." : "Duplikasi"}
                   </button>
                   <button
                     className="btn btn-danger btn-sm"

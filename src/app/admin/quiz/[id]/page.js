@@ -13,6 +13,8 @@ import {
   query,
   orderBy,
   where,
+  addDoc,
+  serverTimestamp,
 } from "@/lib/firebase";
 
 export default function QuizManagePage({ params }) {
@@ -26,6 +28,7 @@ export default function QuizManagePage({ params }) {
   const [isMuted, setIsMuted] = useState(false);
   const [showQuestions, setShowQuestions] = useState(false);
   const [floatingReactions, setFloatingReactions] = useState([]);
+  const [duplicating, setDuplicating] = useState(false);
   const audioRef = useRef(null);
 
   // Track previous scores and ranks for animation
@@ -201,6 +204,47 @@ export default function QuizManagePage({ params }) {
     }
   };
 
+  const handleDuplicate = async () => {
+    if (!quiz || duplicating) return;
+    setDuplicating(true);
+    try {
+      const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+      let newInviteCode = "";
+      for (let i = 0; i < 6; i++) {
+        newInviteCode += chars.charAt(Math.floor(Math.random() * chars.length));
+      }
+
+      const duplicatedData = {
+        title: `${quiz.title || "Quiz"} (Salinan)`,
+        description: quiz.description || "",
+        inviteCode: newInviteCode,
+        status: "draft",
+        timePerQuestion: Number(quiz.timePerQuestion) || 30,
+        musicFileName: quiz.musicFileName || "",
+        questions: Array.isArray(quiz.questions)
+          ? quiz.questions.map((q, i) => ({
+              id: i + 1,
+              question: q.question || "",
+              options: Array.isArray(q.options) ? [...q.options] : ["", "", "", ""],
+              correctAnswer: typeof q.correctAnswer === "number" ? q.correctAnswer : 0,
+              points: typeof q.points === "number" ? q.points : 10,
+            }))
+          : [],
+        createdAt: serverTimestamp(),
+      };
+
+      const docRef = await addDoc(collection(db, "quizzes"), duplicatedData);
+      showToast("Quiz berhasil diduplikasi! Mengalihkan ke quiz baru...", "success");
+      setTimeout(() => {
+        router.push(`/admin/quiz/${docRef.id}`);
+      }, 1200);
+    } catch (err) {
+      console.error("Error duplicating quiz:", err);
+      showToast("Gagal menduplikasi quiz", "error");
+      setDuplicating(false);
+    }
+  };
+
   const getRankClass = (index) => {
     if (index === 0) return "rank-1";
     if (index === 1) return "rank-2";
@@ -326,6 +370,14 @@ export default function QuizManagePage({ params }) {
                   Reset ke Draft
                 </button>
               )}
+              <button
+                className="btn btn-light btn-sm"
+                onClick={handleDuplicate}
+                disabled={duplicating}
+                title="Duplikasi quiz ini menjadi quiz baru"
+              >
+                {duplicating ? "Menduplikasi..." : "Duplikasi Quiz"}
+              </button>
               {quiz.musicFileName && quiz.status === "active" && (
                 <button
                   className="btn btn-light btn-sm"
