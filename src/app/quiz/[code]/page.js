@@ -49,9 +49,51 @@ export default function QuizPlayPage({ params }) {
   if (!clientIdRef.current) {
     clientIdRef.current = "client_" + Math.random().toString(36).substring(2, 10);
   }
+  const [pinCopied, setPinCopied] = useState(false);
   const toastTimeoutRef = useRef(null);
   const audioRef = useRef(null);
   const hasJoined = useRef(false);
+
+  const handleCopyPin = async () => {
+    const pin = quiz?.inviteCode || code;
+    if (!pin) return;
+    try {
+      await navigator.clipboard.writeText(pin);
+      setPinCopied(true);
+      setTimeout(() => setPinCopied(false), 2000);
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const formatPin = (val) => {
+    if (!val) return "--- ---";
+    const cleaned = String(val).replace(/\s+/g, "");
+    if (cleaned.length === 6) {
+      return `${cleaned.slice(0, 3)} ${cleaned.slice(3)}`;
+    }
+    return val;
+  };
+
+  const getInitials = (name) => {
+    if (!name) return "P";
+    const words = name.trim().split(/[\s_]+/);
+    if (words.length >= 2) {
+      return (words[0][0] + words[1][0]).toUpperCase();
+    }
+    return name.slice(0, 2).toUpperCase();
+  };
+
+  const AVATAR_PALETTES = [
+    { bg: "#EDE9FE", color: "#6D28D9" },
+    { bg: "#FCE7F3", color: "#BE185D" },
+    { bg: "#E0E7FF", color: "#3730A3" },
+    { bg: "#FEF3C7", color: "#B45309" },
+    { bg: "#DCFCE7", color: "#15803D" },
+    { bg: "#FFEDD5", color: "#C2410C" },
+    { bg: "#CFFAFE", color: "#0E7490" },
+    { bg: "#F3E8FF", color: "#7E22CE" },
+  ];
 
   // Find quiz by invite code
   useEffect(() => {
@@ -609,8 +651,15 @@ export default function QuizPlayPage({ params }) {
 
   // Waiting room (Interactive Lobby)
   if (gameState === "waiting") {
+    const realOtherParticipants = participantsList.filter(
+      (p) => p.id !== participantId && p.name !== playerName
+    );
+    const displayedParticipants = realOtherParticipants;
+    const totalCount = participantsList.length > 0 ? participantsList.length : 1;
+    const extraCount = Math.max(0, realOtherParticipants.length - 12);
+
     return (
-      <div className="quiz-play-container protected-content">
+      <div className="waiting-lobby-page protected-content">
         {/* Floating Reactions */}
         {floatingReactions.map((r) => (
           <div
@@ -622,103 +671,241 @@ export default function QuizPlayPage({ params }) {
           </div>
         ))}
 
-        <div className="lobby-card animate-scale-in">
-          <div className="lobby-count-badge">
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ display: "inline-block", verticalAlign: "middle", marginRight: "6px" }}>
-              <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
-              <circle cx="9" cy="7" r="4"></circle>
-              <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
-              <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
-            </svg>
-            <span>{participantsList.length} Peserta Sudah Masuk</span>
-          </div>
-
-          <h1 style={{ fontSize: "1.75rem", marginBottom: "0.25rem" }}>
-            {quiz?.title || "Quiz"}
-          </h1>
-          <p style={{ opacity: 0.8, fontSize: "0.95rem" }}>
-            Menunggu Host / Admin memulai kuis...
-          </p>
-
-          {/* Current player spotlight */}
-          <div
-            style={{
-              margin: "1.25rem auto 0.5rem",
-              display: "inline-flex",
-              alignItems: "center",
-              gap: "10px",
-              background: "rgba(255,255,255,0.15)",
-              padding: "8px 20px",
-              borderRadius: "var(--radius-full)",
-            }}
-          >
-            <img
-              src={getPixelbotUrl(playerAvatar)}
-              alt={playerName}
-              width="38"
-              height="38"
-              style={{ borderRadius: "50%", background: "rgba(255,255,255,0.2)" }}
-            />
-            <span style={{ fontWeight: 800, fontSize: "1.05rem" }}>
-              {playerName}
-            </span>
-            {playerNim && (
-              <span style={{ opacity: 0.7, fontSize: "0.85rem" }}>
-                ({playerNim})
+        {/* Top Header Bar */}
+        <div className="lobby-top-bar animate-fade-in-up">
+          {/* Left Info Card */}
+          <div className="lobby-info-card">
+            <div className="lobby-icon-badge">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" />
+              </svg>
+            </div>
+            <div className="lobby-info-text">
+              <span className="lobby-category-eyebrow">
+                LOBBY LANGSUNG • {quiz?.category || "Sains & Tech"}
               </span>
-            )}
+              <h2 className="lobby-title">
+                {quiz?.title || "Trivia Kilat Sains & Tech 2025"}
+              </h2>
+            </div>
           </div>
 
-          {/* Participants chips grid */}
-          <div className="lobby-players-grid">
-            {participantsList.map((p) => {
-              const isMe = p.id === participantId || p.name === playerName;
+          {/* Center Players Count Pill */}
+          <div className="lobby-players-count-pill">
+            <span className="pulse-indicator-dot"></span>
+            <span>{totalCount} Pemain Bergabung</span>
+          </div>
+
+          {/* Right Game PIN */}
+          <div className="lobby-pin-box">
+            <div className="lobby-pin-content">
+              <span className="lobby-pin-label">GAME PIN</span>
+              <span className="lobby-pin-number">
+                {formatPin(quiz?.inviteCode || code)}
+              </span>
+            </div>
+            <button
+              type="button"
+              className="lobby-pin-copy-btn"
+              onClick={handleCopyPin}
+              title={pinCopied ? "Tersalin!" : "Salin Game PIN"}
+            >
+              {pinCopied ? (
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <polyline points="20 6 9 17 4 12"></polyline>
+                </svg>
+              ) : (
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                  <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                </svg>
+              )}
+            </button>
+          </div>
+        </div>
+
+        {/* Main Card */}
+        <div className="lobby-main-card animate-scale-in">
+          {/* Subheader Status Row */}
+          <div className="lobby-status-row">
+            <div className="lobby-server-status">
+              <div className="lobby-broadcast-icon">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M4.9 19.1C1 15.2 1 8.8 4.9 4.9"></path>
+                  <path d="M7.8 16.2c-2.3-2.3-2.3-6.1 0-8.5"></path>
+                  <circle cx="12" cy="12" r="2"></circle>
+                  <path d="M16.2 7.8c2.3 2.3 2.3 6.1 0 8.5"></path>
+                  <path d="M19.1 4.9C23 8.8 23 15.2 19.1 19.1"></path>
+                </svg>
+              </div>
+              <div>
+                <div className="lobby-server-label">STATUS SERVER</div>
+                <div className="lobby-server-value">
+                  Siaran Langsung WebSocket Aktif <span className="server-live-dot">●</span>
+                </div>
+              </div>
+            </div>
+
+            <div className="lobby-meta-chips">
+              <div className="lobby-meta-chip timer-chip">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                  <circle cx="12" cy="12" r="10"></circle>
+                  <polyline points="12 6 12 12 16 14"></polyline>
+                </svg>
+                <span>{quiz?.timePerQuestion || 15} Detik / Soal</span>
+              </div>
+              <div className="lobby-meta-chip questions-chip">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                  <circle cx="12" cy="12" r="10"></circle>
+                  <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"></path>
+                  <line x1="12" y1="17" x2="12.01" y2="17"></line>
+                </svg>
+                <span>{quiz?.questions?.length || 20} Soal Pilihan Ganda</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Peserta Section Header */}
+          <div className="lobby-participants-header">
+            <div className="lobby-participants-title">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+                <circle cx="9" cy="7" r="4"></circle>
+                <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
+                <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
+              </svg>
+              <span>Peserta di Ruang Tunggu</span>
+            </div>
+            <div className="lobby-sync-hint">
+              Menunggu sinkronisasi host
+            </div>
+          </div>
+
+          {/* Participants Grid */}
+          <div className="lobby-participants-grid">
+            {/* Player's Own Card ("KAMU") */}
+            <div className="participant-card is-current-user">
+              <div className="participant-avatar-wrap">
+                <img
+                  src={getPixelbotUrl(playerAvatar)}
+                  alt={playerName}
+                  className="participant-avatar-img"
+                />
+                <span className="participant-online-dot"></span>
+              </div>
+              <div className="participant-info">
+                <div className="participant-name-row">
+                  <span className="participant-name">{playerName}</span>
+                  <span className="participant-you-tag">KAMU</span>
+                </div>
+                <div className="participant-subtext current-user-subtext">
+                  {playerNim ? `NIM ${playerNim} • Siap` : "Siap Bertanding"}
+                </div>
+              </div>
+            </div>
+
+            {/* Other participants */}
+            {displayedParticipants.map((p, idx) => {
+              const initials = getInitials(p.name);
+              const palette = AVATAR_PALETTES[idx % AVATAR_PALETTES.length];
+              const statusText = p.status || "Ready";
               return (
-                <div
-                  key={p.id}
-                  className={`player-chip ${isMe ? "is-me" : ""}`}
-                >
-                  <img
-                    src={getPixelbotUrl(p.avatar)}
-                    alt={p.name}
-                    width="26"
-                    height="26"
-                    style={{ borderRadius: "50%", background: "rgba(255,255,255,0.2)" }}
-                  />
-                  <span>{p.name}</span>
-                  {isMe && <span className="you-tag">Kamu</span>}
+                <div key={p.id || idx} className="participant-card">
+                  <div
+                    className="participant-avatar-initials"
+                    style={{ background: palette.bg, color: palette.color }}
+                  >
+                    {initials}
+                  </div>
+                  <div className="participant-info">
+                    <div className="participant-name" title={p.name}>
+                      {p.name}
+                    </div>
+                    <div className="participant-subtext">
+                      {statusText}
+                    </div>
+                  </div>
                 </div>
               );
             })}
           </div>
 
-          {/* Reaction buttons */}
-          <p
-            style={{
-              fontSize: "0.8rem",
-              opacity: 0.7,
-              marginBottom: "0.5rem",
-            }}
-          >
-            Kirim reaksi emoji ke layar:
-          </p>
-          <div className="reaction-bar-container">
-            {["👏", "🔥", "❤️", "🎉", "😎", "🚀"].map((em) => (
-              <button
-                key={em}
-                className="reaction-btn"
-                type="button"
-                onClick={() => sendReaction(em)}
-              >
-                {em}
-              </button>
-            ))}
+          {/* More players indicator if extra */}
+          {extraCount > 0 && (
+            <div className="lobby-more-players-pill">
+              + {extraCount} pemain lainnya di lobby...
+            </div>
+          )}
+
+          {/* Notice Banner */}
+          <div className="lobby-host-notice-banner">
+            <div className="lobby-notice-left">
+              <div className="lobby-notice-icon-box">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M5 22h14"></path>
+                  <path d="M5 2h14"></path>
+                  <path d="M17 22v-4.172a2 2 0 0 0-.586-1.414L12 12l-4.414 4.414A2 2 0 0 0 7 17.828V22"></path>
+                  <path d="M7 2v4.172a2 2 0 0 0 .586 1.414L12 12l4.414-4.414A2 2 0 0 0 17 6.172V2"></path>
+                </svg>
+              </div>
+              <div>
+                <div className="lobby-notice-title">
+                  Menunggu Host Memulai Kuis <span className="dots-pulse">•••</span>
+                </div>
+                <div className="lobby-notice-desc">
+                  Host sedang memeriksa koneksi semua peserta sebelum hitungan mundur.
+                </div>
+              </div>
+            </div>
+            <div className="lobby-anti-tab-badge">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
+              </svg>
+              <span>Sistem Anti-Tab Blur Aktif</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Bottom Reactions Bar */}
+        <div className="lobby-reaction-section">
+          <div className="lobby-reaction-pill-bar">
+            <div className="lobby-reaction-label">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="12" cy="12" r="10"></circle>
+                <path d="M8 14s1.5 2 4 2 4-2 4-2"></path>
+                <line x1="9" y1="9" x2="9.01" y2="9"></line>
+                <line x1="15" y1="9" x2="15.01" y2="9"></line>
+              </svg>
+              <span>REAKSI LIVE:</span>
+            </div>
+            <div className="lobby-reaction-buttons">
+              {["👏", "🔥", "❤️", "🎉", "😎", "🚀"].map((em) => (
+                <button
+                  key={em}
+                  type="button"
+                  className="lobby-reaction-btn"
+                  onClick={() => sendReaction(em)}
+                  aria-label={`Kirim reaksi ${em}`}
+                >
+                  {em}
+                </button>
+              ))}
+            </div>
+            <span className="lobby-tap-hint">Tap untuk sorak!</span>
           </div>
 
-          <div className="waiting-dots" style={{ marginTop: "1.5rem" }}>
-            <span></span>
-            <span></span>
-            <span></span>
+          <div className="lobby-footer-note">
+            <span>● Gunakan tombol reaksi saat permainan berlangsung untuk menyemangati tim</span>
+            <span>·</span>
+            <span style={{ display: "inline-flex", alignItems: "center", gap: "6px" }}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M2 20h.01"></path>
+                <path d="M7 20v-4"></path>
+                <path d="M12 20v-8"></path>
+                <path d="M17 20V4"></path>
+              </svg>
+              <span>Koneksi Rendah Latensi (Ultra Low Latency)</span>
+            </span>
           </div>
         </div>
       </div>
