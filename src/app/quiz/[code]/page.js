@@ -19,6 +19,15 @@ import {
 import { sfx } from "@/lib/sounds";
 import { getPixelbotUrl } from "@/lib/avatar";
 
+function shuffleIndices(total) {
+  const arr = Array.from({ length: total }, (_, i) => i);
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+  }
+  return arr;
+}
+
 export default function QuizPlayPage({ params }) {
   const { code } = use(params);
   const searchParams = useSearchParams();
@@ -30,6 +39,7 @@ export default function QuizPlayPage({ params }) {
   const [quizId, setQuizId] = useState(null);
   const [quiz, setQuiz] = useState(null);
   const [participantId, setParticipantId] = useState(null);
+  const [questionOrder, setQuestionOrder] = useState(null);
   const [currentQuestion, setCurrentQuestion] = useState(0);
   const [selectedAnswer, setSelectedAnswer] = useState(null);
   const [showResult, setShowResult] = useState(false);
@@ -53,6 +63,12 @@ export default function QuizPlayPage({ params }) {
   const toastTimeoutRef = useRef(null);
   const audioRef = useRef(null);
   const hasJoined = useRef(false);
+
+  // Active question list for this participant (shuffled or sequential)
+  const activeQuestions =
+    questionOrder && quiz?.questions
+      ? questionOrder.map((idx) => quiz.questions[idx]).filter(Boolean)
+      : (quiz?.questions || []);
 
   const handleCopyPin = async () => {
     const pin = quiz?.inviteCode || code;
@@ -120,6 +136,21 @@ export default function QuizPlayPage({ params }) {
 
         const sessionKey = `quiz_${quizDoc.id}_participant`;
         const storedParticipantId = localStorage.getItem(sessionKey);
+        const storedOrderKey = `quiz_${quizDoc.id}_questionOrder`;
+        let resolvedOrder = null;
+
+        // Try load existing order from localStorage
+        const cachedOrder = localStorage.getItem(storedOrderKey);
+        if (cachedOrder) {
+          try {
+            const parsed = JSON.parse(cachedOrder);
+            if (Array.isArray(parsed) && parsed.length === (quizData.questions?.length || 0)) {
+              resolvedOrder = parsed;
+            }
+          } catch (e) {
+            console.error("Failed to parse cached order", e);
+          }
+        }
 
         if (storedParticipantId) {
           setParticipantId(storedParticipantId);
@@ -133,15 +164,38 @@ export default function QuizPlayPage({ params }) {
             const previousAnswers = pData.answers || [];
             setAnswers(previousAnswers);
             setScore(pData.score || 0);
+
+            // If participant document already has saved questionOrder, restore it
+            if (Array.isArray(pData.questionOrder) && pData.questionOrder.length === (quizData.questions?.length || 0)) {
+              resolvedOrder = pData.questionOrder;
+            } else if (resolvedOrder) {
+              updateDoc(pDocRef, { questionOrder: resolvedOrder }).catch(console.error);
+            }
             
-            if (previousAnswers.length >= quizData.questions?.length) {
+            if (previousAnswers.length >= (quizData.questions?.length || 0)) {
               setGameState("finished");
               return; // Stop further execution since they already finished
             } else {
               setCurrentQuestion(previousAnswers.length);
             }
           }
-        } else {
+        }
+
+        // If no order resolved yet, generate it for this participant!
+        if (!resolvedOrder && quizData.questions && quizData.questions.length > 0) {
+          if (quizData.shuffleQuestions !== false) {
+            resolvedOrder = shuffleIndices(quizData.questions.length);
+          } else {
+            resolvedOrder = quizData.questions.map((_, i) => i);
+          }
+        }
+
+        if (resolvedOrder) {
+          setQuestionOrder(resolvedOrder);
+          localStorage.setItem(storedOrderKey, JSON.stringify(resolvedOrder));
+        }
+
+        if (!storedParticipantId) {
           const participantRef = await addDoc(
             collection(db, "quizzes", quizDoc.id, "participants"),
             {
@@ -151,6 +205,7 @@ export default function QuizPlayPage({ params }) {
               score: 0,
               streak: 0,
               answers: [],
+              questionOrder: resolvedOrder || [],
               joinedAt: serverTimestamp(),
             }
           );
@@ -480,8 +535,30 @@ export default function QuizPlayPage({ params }) {
     };
   }, [gameState, triggerWarning, clearClipboard]);
 
+  const goToNextQuestion = useCallback(() => {
+    if (currentQuestion < activeQuestions.length - 1) {
+      setCurrentQuestion((prev) => prev + 1);
+      setSelectedAnswer(null);
+      setShowResult(false);
+      setIsCorrect(false);
+      setTimeLeft(quiz?.timePerQuestion || 30);
+    } else {
+      setGameState("finished");
+      if (participantId && quizId) {
+        updateDoc(doc(db, "quizzes", quizId, "participants", participantId), {
+          score,
+          answers,
+          completedAt: serverTimestamp(),
+        }).catch(console.error);
+      }
+    }
+  }, [currentQuestion, activeQuestions.length, quiz?.timePerQuestion, participantId, quizId, score, answers]);
+
   const handleTimeUp = useCallback(() => {
     if (selectedAnswer !== null) return;
+    const currentQ = activeQuestions[currentQuestion];
+    if (!currentQ) return;
+
     setSelectedAnswer(-1);
     setIsCorrect(false);
     setShowResult(true);
@@ -492,28 +569,38 @@ export default function QuizPlayPage({ params }) {
     setScorePopup({ correct: false, points: 0, streak: 0 });
 
     const newAnswer = {
-      questionId: currentQuestion,
+      questionId: currentQ.id || currentQuestion,
       selected: -1,
       correct: false,
-      timeTaken: quiz.timePerQuestion || 30,
+      timeTaken: quiz?.timePerQuestion || 30,
     };
     setAnswers((prev) => [...prev, newAnswer]);
+
+    if (participantId && quizId) {
+      updateDoc(doc(db, "quizzes", quizId, "participants", participantId), {
+        score,
+        streak: 0,
+        answers: [...answers, newAnswer],
+      }).catch(console.error);
+    }
 
     setTimeout(() => {
       setScorePopup(null);
       goToNextQuestion();
     }, 2000);
-  }, [selectedAnswer, currentQuestion, quiz, isMuted]);
+  }, [selectedAnswer, currentQuestion, activeQuestions, isMuted, quiz?.timePerQuestion, participantId, quizId, score, answers, goToNextQuestion]);
 
   const handleAnswer = (optionIndex) => {
     if (selectedAnswer !== null || showResult) return;
 
-    const question = quiz.questions[currentQuestion];
+    const question = activeQuestions[currentQuestion];
+    if (!question) return;
+
     const correct = optionIndex === question.correctAnswer;
-    const timeTaken = (quiz.timePerQuestion || 30) - timeLeft;
+    const timeTaken = (quiz?.timePerQuestion || 30) - timeLeft;
     const points = correct ? Math.max(question.points, 1) : 0;
     const speedBonus = correct
-      ? Math.round((timeLeft / (quiz.timePerQuestion || 30)) * 5)
+      ? Math.round((timeLeft / (quiz?.timePerQuestion || 30)) * 5)
       : 0;
 
     let newStreak = streak;
@@ -554,7 +641,7 @@ export default function QuizPlayPage({ params }) {
     setScore(newScore);
 
     const newAnswer = {
-      questionId: currentQuestion,
+      questionId: question.id || currentQuestion,
       selected: optionIndex,
       correct,
       timeTaken,
@@ -574,25 +661,6 @@ export default function QuizPlayPage({ params }) {
       setScorePopup(null);
       goToNextQuestion();
     }, 2000);
-  };
-
-  const goToNextQuestion = () => {
-    if (currentQuestion < quiz.questions.length - 1) {
-      setCurrentQuestion((prev) => prev + 1);
-      setSelectedAnswer(null);
-      setShowResult(false);
-      setIsCorrect(false);
-      setTimeLeft(quiz.timePerQuestion || 30);
-    } else {
-      setGameState("finished");
-      if (participantId && quizId) {
-        updateDoc(doc(db, "quizzes", quizId, "participants", participantId), {
-          score,
-          answers,
-          completedAt: serverTimestamp(),
-        }).catch(console.error);
-      }
-    }
   };
 
   const timerPercentage = quiz
@@ -762,6 +830,11 @@ export default function QuizPlayPage({ params }) {
                 </svg>
                 <span>{quiz?.questions?.length || 20} Soal Pilihan Ganda</span>
               </div>
+              {quiz?.shuffleQuestions !== false && (
+                <div className="lobby-meta-chip" style={{ background: "rgba(107, 63, 160, 0.15)", color: "var(--kahoot-purple-light)", border: "1px solid rgba(107, 63, 160, 0.3)" }}>
+                  <span>🔀 Soal Diacak</span>
+                </div>
+              )}
             </div>
           </div>
 
@@ -924,7 +997,7 @@ export default function QuizPlayPage({ params }) {
           </p>
           <p style={{ fontSize: "0.85rem", opacity: 0.7 }}>
             Anda menjawab {answers.filter((a) => a.correct).length} dari{" "}
-            {quiz?.questions?.length || 0} soal dengan benar
+            {activeQuestions.length || quiz?.questions?.length || 0} soal dengan benar
           </p>
           <button
             className="btn btn-primary btn-lg"
@@ -943,7 +1016,17 @@ export default function QuizPlayPage({ params }) {
   }
 
   // Playing
-  const question = quiz.questions[currentQuestion];
+  const question = activeQuestions[currentQuestion];
+  if (!question) {
+    return (
+      <div className="quiz-play-container">
+        <div className="loading-container">
+          <div className="spinner"></div>
+          <p style={{ opacity: 0.7 }}>Memuat soal...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="quiz-play-container protected-content">
@@ -1030,13 +1113,13 @@ export default function QuizPlayPage({ params }) {
         {/* Progress */}
         <div className="question-progress">
           <span className="progress-text">
-            {currentQuestion + 1}/{quiz.questions.length}
+            {currentQuestion + 1}/{activeQuestions.length}
           </span>
           <div className="progress-bar">
             <div
               className="progress-bar-fill"
               style={{
-                width: `${((currentQuestion + 1) / quiz.questions.length) * 100}%`,
+                width: `${((currentQuestion + 1) / (activeQuestions.length || 1)) * 100}%`,
               }}
             ></div>
           </div>

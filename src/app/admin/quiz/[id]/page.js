@@ -220,6 +220,7 @@ export default function QuizManagePage({ params }) {
         inviteCode: newInviteCode,
         status: "draft",
         timePerQuestion: Number(quiz.timePerQuestion) || 30,
+        shuffleQuestions: quiz.shuffleQuestions !== false,
         musicFileName: quiz.musicFileName || "",
         questions: Array.isArray(quiz.questions)
           ? quiz.questions.map((q, i) => ({

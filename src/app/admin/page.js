@@ -111,6 +111,7 @@ export default function AdminPage() {
         inviteCode: newInviteCode,
         status: "draft",
         timePerQuestion: Number(targetQuiz.timePerQuestion) || 30,
+        shuffleQuestions: targetQuiz.shuffleQuestions !== false,
         musicFileName: targetQuiz.musicFileName || "",
         questions: Array.isArray(targetQuiz.questions)
           ? targetQuiz.questions.map((q, i) => ({

@@ -20,6 +20,7 @@ export default function CreateQuizPage() {
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [timePerQuestion, setTimePerQuestion] = useState(30);
+  const [shuffleQuestions, setShuffleQuestions] = useState(true);
   const [questions, setQuestions] = useState([
     {
       id: 1,
@@ -296,6 +297,7 @@ export default function CreateQuizPage() {
         inviteCode,
         status: "draft",
         timePerQuestion: Number(timePerQuestion),
+        shuffleQuestions: Boolean(shuffleQuestions),
         musicFileName: finalMusic,
         questions: questions.map((q, i) => ({
           id: i + 1,
@@ -400,6 +402,20 @@ export default function CreateQuizPage() {
                     max={120}
                     style={{ maxWidth: "140px" }}
                   />
+                </div>
+                <div style={{ marginTop: "1rem", paddingTop: "0.75rem", borderTop: "1px solid var(--bg-light)" }}>
+                  <label style={{ display: "flex", alignItems: "center", gap: "8px", cursor: "pointer", fontWeight: 700, fontSize: "0.9rem", color: "var(--text-dark)" }}>
+                    <input
+                      type="checkbox"
+                      checked={shuffleQuestions}
+                      onChange={(e) => setShuffleQuestions(e.target.checked)}
+                      style={{ width: "18px", height: "18px", accentColor: "var(--kahoot-purple)", cursor: "pointer" }}
+                    />
+                    <span>🔀 Acak Urutan Soal Tiap Peserta</span>
+                  </label>
+                  <p style={{ fontSize: "0.75rem", color: "var(--text-light)", marginTop: "4px", marginLeft: "26px", lineHeight: 1.4 }}>
+                    Setiap peserta akan menerima urutan soal yang berbeda-beda agar tidak bisa saling mencontek.
+                  </p>
                 </div>
               </div>
 
